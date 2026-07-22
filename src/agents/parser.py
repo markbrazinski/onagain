@@ -68,7 +68,75 @@ def parse_garments(image_path: Path, work_dir: Path = None) -> list:
         g["bounding_box"] = [left, top, right - left, bottom - top]
         g["crop_path"] = str(crop_path)
         results.append(g)
+
+    # Pass 2: verify each crop is exactly one complete garment; refine box if not.
+    for g in results:
+        if g.get("crop_path"):
+            _refine_crop(im, g, work_dir, image_path.stem)
     return results
+
+
+REFINE_PROMPT = """This image should show EXACTLY ONE complete garment of type "{gtype}" and nothing else.
+The image is {width}x{height} pixels. Assess it and return ONLY valid JSON:
+{{"ok": true/false,
+  "issue": "<null if ok, else one of: 'contains_other_items', 'garment_cut_off', 'not_a_garment', 'physically_overlapping'>",
+  "refined_box": <see below>}}
+
+refined_box rules:
+- ok=true or issue='not_a_garment': null
+- issue='contains_other_items' where a tighter rectangle CAN isolate the {gtype}: the [x, y, width, height] pixel box around ONLY the {gtype}. Always attempt this.
+- issue='physically_overlapping' (another garment lies ON TOP of the {gtype} so no rectangle can exclude it): null
+- issue='garment_cut_off': null (the caller will expand the original box)"""
+
+
+def _refine_crop(im, g: dict, work_dir: Path, stem: str):
+    """Pass 2: ask Claude to verify the crop; re-crop from the refined box if needed."""
+    crop_path = Path(g["crop_path"])
+    from PIL import Image as _I
+    crop_im = _I.open(crop_path)
+    cw, ch = crop_im.size
+    try:
+        verdict = ask_vision_json(crop_path, REFINE_PROMPT.format(
+            gtype=g.get("type", "garment"), width=cw, height=ch), max_tokens=300)
+    except Exception as e:
+        g["refine"] = {"ok": None, "issue": f"refine error: {e}"}
+        return
+    g["refine"] = {"ok": bool(verdict.get("ok")), "issue": verdict.get("issue")}
+
+    if verdict.get("ok"):
+        return
+    if verdict.get("issue") == "not_a_garment":
+        g["crop_path"] = None  # drop hallucinated items (pillows etc.)
+        return
+    if verdict.get("issue") == "garment_cut_off":
+        # expand original box 20% each side and re-crop from the source image
+        ox, oy, ow, oh = g["bounding_box"]
+        ex, ey = int(ow * 0.2), int(oh * 0.2)
+        left, top = max(0, ox - ex), max(0, oy - ey)
+        right, bottom = min(im.size[0], ox + ow + ex), min(im.size[1], oy + oh + ey)
+        expanded_path = work_dir / f"{crop_path.stem}_expanded.jpg"
+        im.crop((left, top, right, bottom)).convert("RGB").save(expanded_path, quality=92)
+        g["bounding_box"] = [left, top, right - left, bottom - top]
+        g["crop_path"] = str(expanded_path)
+        g["refine"]["refined"] = True
+        return
+    box = verdict.get("refined_box")
+    if not box or len(box) != 4:
+        return  # keep original crop; issue is recorded for the caller (e.g. physically_overlapping)
+    # refined box is in crop coords -> translate to full-image coords
+    ox, oy = g["bounding_box"][0], g["bounding_box"][1]
+    x, y, w, h = box
+    left = max(0, int(ox + x))
+    top = max(0, int(oy + y))
+    right = min(im.size[0], int(ox + x + w))
+    bottom = min(im.size[1], int(oy + y + h))
+    if right - left < 50 or bottom - top < 50:
+        return  # refusal to produce a degenerate crop
+    refined_path = work_dir / f"{crop_path.stem}_refined.jpg"
+    im.crop((left, top, right, bottom)).convert("RGB").save(refined_path, quality=92)
+    g["bounding_box"] = [left, top, right - left, bottom - top]
+    g["crop_path"] = str(refined_path)
+    g["refine"]["refined"] = True
 
 
 if __name__ == "__main__":
