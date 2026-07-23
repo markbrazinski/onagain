@@ -23,13 +23,13 @@ PROMPT = """Identify each distinct garment in this image. For each garment, retu
 - garment_number (1-indexed)
 - type (e.g., pants, shirt, dress, jacket, shorts)
 - dominant_color
-- brand_text (any visible brand name/logo, or null)
-- bounding_box: [x, y, width, height] in pixels, where x,y is the top-left corner
+- brand_text (any visible brand name/logo text, or null)
+- bounding_box: [left, top, right, bottom] as PERCENTAGES of image dimensions (0-100),
+  e.g. a garment occupying the bottom-left quarter is [0, 50, 50, 100]
 
-Return ONLY a valid JSON array. The image dimensions are {width}x{height} pixels. \
-Coordinates must be within these bounds. Bounding boxes must tightly enclose the \
-ENTIRE garment including sleeves and hems. Do not include non-garment items \
-(luggage, accessories, shoes)."""
+Return ONLY a valid JSON array. Bounding boxes must tightly enclose the ENTIRE \
+garment including sleeves and hems. Each physical garment appears exactly once. \
+Do not include non-garment items (luggage, accessories, shoes, bedding)."""
 
 
 def parse_garments(image_path: Path, work_dir: Path = None) -> list:
@@ -46,7 +46,7 @@ def parse_garments(image_path: Path, work_dir: Path = None) -> list:
     ask_path = work_dir / f"_ask_{image_path.stem}.jpg"
     im.resize((ask_w, ask_h)).convert("RGB").save(ask_path, quality=90)
 
-    garments = ask_vision_json(ask_path, PROMPT.format(width=ask_w, height=ask_h))
+    garments = ask_vision_json(ask_path, PROMPT)
 
     results = []
     for g in garments:
@@ -55,13 +55,22 @@ def parse_garments(image_path: Path, work_dir: Path = None) -> list:
             g["crop_path"] = None
             results.append(g)
             continue
-        x, y, w, h = [v / scale for v in box]  # back to full-res coords
+        # percentage [left, top, right, bottom] -> full-res pixels
+        l_pct, t_pct, r_pct, b_pct = box
+        x = l_pct / 100 * full_w
+        y = t_pct / 100 * full_h
+        w = max(0, (r_pct - l_pct) / 100 * full_w)
+        h = max(0, (b_pct - t_pct) / 100 * full_h)
         # 10% padding, clamped to image bounds
         px, py = w * PADDING, h * PADDING
         left = max(0, int(x - px))
         top = max(0, int(y - py))
         right = min(full_w, int(x + w + px))
         bottom = min(full_h, int(y + h + py))
+        if right - left < 50 or bottom - top < 50:
+            g["crop_path"] = None
+            results.append(g)
+            continue
         gtype = str(g.get("type", "garment")).replace("/", "-").replace(" ", "_")
         crop_path = work_dir / f"{image_path.stem}_g{g.get('garment_number', len(results)+1)}_{gtype}.jpg"
         im.crop((left, top, right, bottom)).convert("RGB").save(crop_path, quality=92)
@@ -69,35 +78,42 @@ def parse_garments(image_path: Path, work_dir: Path = None) -> list:
         g["crop_path"] = str(crop_path)
         results.append(g)
 
-    # Pass 2: verify each crop is exactly one complete garment; refine box if not.
+    # Pass 2 (parallel): verify each crop is exactly one complete garment; refine if not.
+    from concurrent.futures import ThreadPoolExecutor
+    to_refine = [g for g in results if g.get("crop_path")]
+    if to_refine:
+        with ThreadPoolExecutor(max_workers=min(6, len(to_refine))) as ex:
+            list(ex.map(lambda g: _refine_crop(im, g, work_dir, image_path.stem), to_refine))
+
+    # percentage boxes for UI overlay drawing at any display size
     for g in results:
-        if g.get("crop_path"):
-            _refine_crop(im, g, work_dir, image_path.stem)
+        if g.get("bounding_box"):
+            x, y, w, h = g["bounding_box"]
+            g["box_pct"] = {"left": round(x / full_w * 100, 1), "top": round(y / full_h * 100, 1),
+                            "width": round(w / full_w * 100, 1), "height": round(h / full_h * 100, 1)}
     return results
 
 
 REFINE_PROMPT = """This image should show EXACTLY ONE complete garment of type "{gtype}" and nothing else.
-The image is {width}x{height} pixels. Assess it and return ONLY valid JSON:
+Assess it and return ONLY valid JSON:
 {{"ok": true/false,
   "issue": "<null if ok, else one of: 'contains_other_items', 'garment_cut_off', 'not_a_garment', 'physically_overlapping'>",
   "refined_box": <see below>}}
 
 refined_box rules:
 - ok=true or issue='not_a_garment': null
-- issue='contains_other_items' where a tighter rectangle CAN isolate the {gtype}: the [x, y, width, height] pixel box around ONLY the {gtype}. Always attempt this.
+- issue='contains_other_items' where a tighter rectangle CAN isolate the {gtype}: [left, top, right, bottom] as PERCENTAGES (0-100) of THIS image, tightly around ONLY the {gtype}. Always attempt this.
 - issue='physically_overlapping' (another garment lies ON TOP of the {gtype} so no rectangle can exclude it): null
-- issue='garment_cut_off': null (the caller will expand the original box)"""
+- issue='garment_cut_off': null (the caller will expand the original box)
+Minor background (bedsheet/floor) visible around the garment is fine — that is ok=true."""
 
 
 def _refine_crop(im, g: dict, work_dir: Path, stem: str):
     """Pass 2: ask Claude to verify the crop; re-crop from the refined box if needed."""
     crop_path = Path(g["crop_path"])
-    from PIL import Image as _I
-    crop_im = _I.open(crop_path)
-    cw, ch = crop_im.size
     try:
         verdict = ask_vision_json(crop_path, REFINE_PROMPT.format(
-            gtype=g.get("type", "garment"), width=cw, height=ch), max_tokens=300)
+            gtype=g.get("type", "garment")), max_tokens=300)
     except Exception as e:
         g["refine"] = {"ok": None, "issue": f"refine error: {e}"}
         return
@@ -123,15 +139,20 @@ def _refine_crop(im, g: dict, work_dir: Path, stem: str):
     box = verdict.get("refined_box")
     if not box or len(box) != 4:
         return  # keep original crop; issue is recorded for the caller (e.g. physically_overlapping)
-    # refined box is in crop coords -> translate to full-image coords
-    ox, oy = g["bounding_box"][0], g["bounding_box"][1]
-    x, y, w, h = box
-    left = max(0, int(ox + x))
-    top = max(0, int(oy + y))
-    right = min(im.size[0], int(ox + x + w))
-    bottom = min(im.size[1], int(oy + y + h))
+    # refined box is percentages of the CROP -> translate to full-image pixel coords
+    ox, oy, ow, oh = g["bounding_box"]
+    l_pct, t_pct, r_pct, b_pct = box
+    left = max(0, int(ox + l_pct / 100 * ow))
+    top = max(0, int(oy + t_pct / 100 * oh))
+    right = min(im.size[0], int(ox + r_pct / 100 * ow))
+    bottom = min(im.size[1], int(oy + b_pct / 100 * oh))
     if right - left < 50 or bottom - top < 50:
         return  # refusal to produce a degenerate crop
+    # ponytail: a "refinement" discarding >60% of the crop is nearly always a
+    # mis-grounding (low-contrast garments) — keep the original instead
+    if (right - left) * (bottom - top) < 0.4 * ow * oh:
+        g["refine"]["rejected_shrink"] = True
+        return
     refined_path = work_dir / f"{crop_path.stem}_refined.jpg"
     im.crop((left, top, right, bottom)).convert("RGB").save(refined_path, quality=92)
     g["bounding_box"] = [left, top, right - left, bottom - top]
