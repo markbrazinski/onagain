@@ -138,9 +138,15 @@ function copyListing(n){
   S.copied[n] = true; render();
   setTimeout(() => { S.copied[n] = false; render(); }, 1600);
 }
-function downloadPhoto(n){
+async function downloadPhoto(n){
   const g = garment(n);
-  if(g?.vto?.best_url){ const a = document.createElement("a"); a.href = g.vto.best_url; a.download = `onagain_${n}.jpg`; a.click(); }
+  if(!g?.vto?.best_url) return;
+  try{
+    const blob = await (await fetch(g.vto.best_url + "?download=1")).blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `onagain_${n}.jpg`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }catch(e){ alert("Download failed: " + e); }
 }
 function flagsOf(g){
   const f = [], e = edits(g.garment_number);
@@ -247,7 +253,7 @@ function heroHtml(g){
   const prog = g.progress || {};
   const failed = prog.vto === "failed";
   const allDone = Object.values(prog).length && Object.values(prog).every(v => v==="done"||v==="failed");
-  if(g.vto?.best_url) return { state:"render:"+g.vto.best_url, html:`<img src="${g.vto.best_url}" style="width:100%;height:100%;object-fit:cover">` };
+  if(g.vto?.best_url) return { state:"render:"+g.vto.best_url, html:`<img src="${g.vto.best_url}" style="width:100%;height:100%;object-fit:contain">` };
   if(failed) return { state:"failed", html:`<span style="font-size:22px;color:#DC2626">⚠</span>` };
   if(allDone) return { state:"done", html:`<span class="stepdot" style="width:20px;height:20px;background:#16A34A;color:#fff;font-size:12px">✓</span>` };
   return { state:"spin", html:`<span class="spin" style="width:20px;height:20px"></span>` };
@@ -297,8 +303,8 @@ function rReviewCard(g){
   }
   if(S.approved[n]){
     return `<div class="card" style="display:flex;flex-direction:column">
-      <div style="position:relative;aspect-ratio:4/5;border-radius:8px;overflow:hidden;margin-bottom:12px">
-        <img src="${g.vto?.best_url || g.crop_url}" style="width:100%;height:100%;object-fit:cover">
+      <div style="position:relative;aspect-ratio:4/5;border-radius:8px;overflow:hidden;margin-bottom:12px;background:#efece5">
+        <img src="${g.vto?.best_url || g.crop_url}" style="width:100%;height:100%;object-fit:contain">
         <span style="position:absolute;top:9px;left:9px;background:#F0FDF4;color:#16A34A;font:500 11px Inter;padding:3px 8px;border-radius:9999px">✓ Approved</span></div>
       <div style="font-size:13px;font-weight:500;margin-bottom:10px">${esc(displayTitle(g))}</div>
       <div style="font-size:11px;color:#6B7280;margin-bottom:12px">Listed to <b style="color:#1A1A1A">${esc(currentPlatform(g))}</b></div>
@@ -321,7 +327,7 @@ function rReviewCard(g){
     <input class="specv" value="${esc(val)}" onchange="factEdit(${n},'${{Brand:"brand",Color:"color",Material:"material_estimate",Condition:"condition_estimate"}[key]}',this.value)" style="${key==="Brand"?"border-bottom-color:#C4654A;font-weight:600":""}"></div>`;
   return `<div class="card" style="display:flex;flex-direction:column">
     <div style="position:relative;aspect-ratio:4/5;border-radius:8px;overflow:hidden;margin-bottom:12px;background:#efece5">
-      <img src="${g.vto?.best_url || g.crop_url}" style="width:100%;height:100%;object-fit:cover">
+      <img src="${g.vto?.best_url || g.crop_url}" style="width:100%;height:100%;object-fit:contain">
       <span style="position:absolute;top:9px;left:9px;background:#F0FDF4;color:#16A34A;font:500 11px Inter;padding:3px 8px;border-radius:9999px">✓ Complete</span>
       <img src="${g.crop_url}" style="position:absolute;bottom:8px;right:8px;width:40px;height:50px;border-radius:5px;border:2px solid #fff;object-fit:cover">
     </div>

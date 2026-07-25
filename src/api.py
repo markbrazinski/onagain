@@ -228,12 +228,13 @@ def crop_image(batch_id: str, n: int):
 
 
 @app.get("/api/batch/{batch_id}/render/{n}")
-def render_image(batch_id: str, n: int):
+def render_image(batch_id: str, n: int, download: bool = False):
     batch = BATCHES.get(batch_id)
     gm = batch and next((g for g in batch["garments"] if g["garment_number"] == n), None)
     if not gm or not (gm.get("vto") or {}).get("best"):
         raise HTTPException(404, "no render")
-    return FileResponse(gm["vto"]["best"])
+    headers = {"Content-Disposition": f'attachment; filename="onagain_{n}.jpg"'} if download else None
+    return FileResponse(gm["vto"]["best"], headers=headers)
 
 
 # static UI — mounted last so /api/* wins
