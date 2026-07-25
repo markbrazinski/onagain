@@ -120,10 +120,12 @@ def _process_garment(batch: dict, gm: dict, base: Path):
 def _run_batch(batch_id: str, base: Path, numbers):
     batch = BATCHES[batch_id]
     batch["status"] = "processing"
-    for gm in batch["garments"]:
-        if numbers and gm["garment_number"] not in numbers:
-            continue
-        _process_garment(batch, gm, base)
+    targets = [gm for gm in batch["garments"]
+               if not numbers or gm["garment_number"] in numbers]
+    # garments are independent — process them concurrently
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(4, len(targets) or 1)) as ex:
+        list(ex.map(lambda gm: _process_garment(batch, gm, base), targets))
     batch["status"] = "done"
 
 

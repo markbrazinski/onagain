@@ -157,9 +157,28 @@ function flagsOf(g){
 function render(){
   $("crumb").textContent = { upload:"New batch", processing:"Processing", review:"Review" }[S.screen] || "";
   const m = $("main");
+  // processing screen updates in place across polls to avoid full-DOM flicker
+  if(S.screen === "processing" && render._screen === "processing"){ patchProcessing(); return; }
+  render._screen = S.screen;
   if(S.screen === "upload") m.innerHTML = rUpload();
   else if(S.screen === "processing") m.innerHTML = rProcessing();
   else if(S.screen === "review") m.innerHTML = rReview();
+}
+
+/* In-place update of the processing cards — touches only the step rows and hero
+   that changed, so images and layout never flicker. */
+function patchProcessing(){
+  const gs = S.status?.garments || [];
+  const doneCount = gs.filter(g => Object.values(g.progress||{}).length &&
+    Object.values(g.progress||{}).every(v => v==="done"||v==="failed")).length;
+  const sub = document.getElementById("proc-sub");
+  if(sub) sub.textContent = `${doneCount} of ${gs.length} complete · rendering as ${S.base}`;
+  gs.forEach(g => {
+    const steps = document.getElementById(`steps-${g.garment_number}`);
+    if(steps) steps.innerHTML = stepRows(g);
+    const hero = document.getElementById(`hero-${g.garment_number}`);
+    if(hero){ const h = heroHtml(g); if(hero.dataset.state !== h.state){ hero.innerHTML = h.html; hero.dataset.state = h.state; } }
+  });
 }
 
 function rUpload(){
@@ -210,35 +229,45 @@ function rUpload(){
     ${inner}</div>`;
 }
 
+function stepRows(g){
+  const prog = g.progress || {};
+  return Object.keys(STEP_LABELS).map(k => {
+    const st = prog[k] || "wait";
+    let dot, color = "#9CA3AF", weight = "400";
+    if(st==="done"){ dot = `<span class="stepdot" style="background:#16A34A;color:#fff">✓</span>`; color="#6B7280"; }
+    else if(st==="active"){ dot = `<span class="spin" style="width:14px;height:14px;border-width:2px;border-color:#D97706;border-top-color:transparent"></span>`; color="#1A1A1A"; weight="500"; }
+    else if(st==="failed"){ dot = `<span class="stepdot" style="background:#DC2626;color:#fff">!</span>`; color="#DC2626"; weight="500"; }
+    else dot = `<span class="stepdot" style="border:1.5px solid #E5E2DB"></span>`;
+    return `<div style="display:flex;align-items:center;gap:8px">${dot}<span style="color:${color};font-weight:${weight};font-size:12px">${STEP_LABELS[k]}</span></div>`;
+  }).join("");
+}
+
+/* returns {state, html} so patchProcessing only swaps the hero when its state changes */
+function heroHtml(g){
+  const prog = g.progress || {};
+  const failed = prog.vto === "failed";
+  const allDone = Object.values(prog).length && Object.values(prog).every(v => v==="done"||v==="failed");
+  if(g.vto?.best_url) return { state:"render:"+g.vto.best_url, html:`<img src="${g.vto.best_url}" style="width:100%;height:100%;object-fit:cover">` };
+  if(failed) return { state:"failed", html:`<span style="font-size:22px;color:#DC2626">⚠</span>` };
+  if(allDone) return { state:"done", html:`<span class="stepdot" style="width:20px;height:20px;background:#16A34A;color:#fff;font-size:12px">✓</span>` };
+  return { state:"spin", html:`<span class="spin" style="width:20px;height:20px"></span>` };
+}
+
 function rProcessing(){
   const gs = S.status?.garments || [];
-  const doneCount = gs.filter(g => Object.values(g.progress||{}).every(v => v==="done"||v==="failed") && Object.keys(g.progress||{}).length).length;
+  const doneCount = gs.filter(g => Object.values(g.progress||{}).length &&
+    Object.values(g.progress||{}).every(v => v==="done"||v==="failed")).length;
   const cards = gs.map(g => {
-    const prog = g.progress || {};
-    const failed = prog.vto === "failed";
-    const allDone = Object.values(prog).length && Object.values(prog).every(v => v==="done"||v==="failed");
-    const steps = Object.keys(STEP_LABELS).map(k => {
-      const st = prog[k] || "wait";
-      let dot, color = "#9CA3AF", weight = "400";
-      if(st==="done"){ dot = `<span class="stepdot" style="background:#16A34A;color:#fff">✓</span>`; color="#6B7280"; }
-      else if(st==="active"){ dot = `<span class="spin" style="width:14px;height:14px;border-width:2px;border-color:#D97706;border-top-color:transparent"></span>`; color="#1A1A1A"; weight="500"; }
-      else if(st==="failed"){ dot = `<span class="stepdot" style="background:#DC2626;color:#fff">!</span>`; color="#DC2626"; weight="500"; }
-      else dot = `<span class="stepdot" style="border:1.5px solid #E5E2DB"></span>`;
-      return `<div style="display:flex;align-items:center;gap:8px">${dot}<span style="color:${color};font-weight:${weight};font-size:12px">${STEP_LABELS[k]}</span></div>`;
-    }).join("");
-    const hero = g.vto?.best_url
-      ? `<img src="${g.vto.best_url}" style="width:100%;height:100%;object-fit:cover">`
-      : failed ? `<span style="font-size:22px;color:#DC2626">⚠</span>`
-      : allDone ? `<span class="stepdot" style="width:20px;height:20px;background:#16A34A;color:#fff;font-size:12px">✓</span>`
-      : `<span class="spin" style="width:20px;height:20px"></span>`;
+    const failed = g.progress?.vto === "failed";
+    const h = heroHtml(g);
     return `<div class="card" style="border-left:${failed?"3px solid #DC2626":"none"}">
-      <div style="aspect-ratio:16/11;border-radius:8px;overflow:hidden;background:#efece5;display:flex;align-items:center;justify-content:center;margin-bottom:12px">${hero}</div>
+      <div id="hero-${g.garment_number}" data-state="${h.state}" style="aspect-ratio:16/11;border-radius:8px;overflow:hidden;background:#efece5;display:flex;align-items:center;justify-content:center;margin-bottom:12px">${h.html}</div>
       <div style="font-size:13px;font-weight:500;margin-bottom:10px">${esc(g.identity?.type || g.type || "Garment")}</div>
-      <div style="display:flex;flex-direction:column;gap:7px">${steps}</div></div>`;
+      <div id="steps-${g.garment_number}" style="display:flex;flex-direction:column;gap:7px">${stepRows(g)}</div></div>`;
   }).join("");
   return `<div class="fade">
     <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:20px">
-      <div><h1>Processing batch</h1><p class="sub">${doneCount} of ${gs.length||"…"} complete · rendering as ${S.base}</p></div>
+      <div><h1>Processing batch</h1><p class="sub" id="proc-sub">${doneCount} of ${gs.length||"…"} complete · rendering as ${S.base}</p></div>
       <button class="btn-ghost" onclick="S.screen='review';render()">Skip to review →</button></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px">${cards}</div></div>`;
 }
