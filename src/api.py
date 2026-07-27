@@ -199,6 +199,29 @@ def regen_copy(batch_id: str, n: int, req: RegenReq):
     return {"copy": gm["copy"], "identity": gm["identity"]}
 
 
+class RegenImageReq(BaseModel):
+    base: str = "mannequin"
+
+
+@app.post("/api/batch/{batch_id}/garment/{n}/regen_image")
+def regen_image(batch_id: str, n: int, req: RegenImageReq):
+    """Re-run VTO for one garment (new render, may differ on fit/drape failures)."""
+    batch = BATCHES.get(batch_id)
+    if not batch:
+        raise HTTPException(404, "unknown batch")
+    gm = next((g for g in batch["garments"] if g["garment_number"] == n), None)
+    if not gm or not gm.get("crop_path"):
+        raise HTTPException(404, "unknown garment")
+    base = _base_photo(req.base)
+    gtype = (gm.get("identity") or {}).get("type") or gm.get("type") or "auto"
+    batch["progress"].setdefault(n, {})["vto"] = "active"
+    gm["vto"] = vto.render_garment(Path(gm["crop_path"]), base,
+                                   Path(batch["dir"]) / "renders", gtype)
+    batch["progress"][n]["vto"] = "done" if gm["vto"]["best"] else "failed"
+    return {"vto": {"best_url": f"/api/batch/{batch_id}/render/{n}" if gm["vto"].get("best") else None,
+                    "ranking_reason": gm["vto"].get("ranking_reason")}}
+
+
 @app.get("/api/bases")
 def list_bases():
     return {"bases": [{"name": f.stem, "url": f"/api/base/{f.stem}"}

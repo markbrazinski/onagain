@@ -13,6 +13,7 @@ const S = {
   edits: {},              // garment_number -> {title, price, size, measurements}
   approved: {},           // garment_number -> true
   busyCopy: {},           // garment_number -> true while regen in flight
+  busyImg: {},            // garment_number -> true while VTO re-render in flight
   copied: {},             // garment_number -> true briefly after copy
   parsing: false,
 };
@@ -117,6 +118,20 @@ function factEdit(n, key, value){
 }
 function setPlatform(n, p){ S.platform[n] = p; regenCopy(n); }
 function setCopyMode(n, m){ S.copyMode[n] = m; render(); }
+
+async function regenImage(n){
+  const g = garment(n); if(!g) return;
+  S.busyImg[n] = true; render();
+  try{
+    const d = await (await fetch(`/api/batch/${S.batchId}/garment/${n}/regen_image`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ base: S.base }),
+    })).json();
+    g.vto = d.vto;
+    g._rev = (g._rev || 0) + 1;   // cache-bust the <img> so the new render shows
+  }catch(err){ alert("Regenerate failed: " + err); }
+  S.busyImg[n] = false; render();
+}
 
 function pasteText(g){
   const v = currentVariant(g);
@@ -326,11 +341,13 @@ function rReviewCard(g){
   const spec = (key, val) => `<div class="specrow"><span class="speck">${key}</span>
     <input class="specv" value="${esc(val)}" onchange="factEdit(${n},'${{Brand:"brand",Color:"color",Material:"material_estimate",Condition:"condition_estimate"}[key]}',this.value)" style="${key==="Brand"?"border-bottom-color:#C4654A;font-weight:600":""}"></div>`;
   return `<div class="card" style="display:flex;flex-direction:column">
-    <div style="position:relative;aspect-ratio:4/5;border-radius:8px;overflow:hidden;margin-bottom:12px;background:#efece5">
-      <img src="${g.vto?.best_url || g.crop_url}" style="width:100%;height:100%;object-fit:contain">
+    <div style="position:relative;aspect-ratio:4/5;border-radius:8px;overflow:hidden;margin-bottom:6px;background:#efece5">
+      <img src="${g.vto?.best_url || g.crop_url}${g._rev?`?r=${g._rev}`:""}" style="width:100%;height:100%;object-fit:contain">
       <span style="position:absolute;top:9px;left:9px;background:#F0FDF4;color:#16A34A;font:500 11px Inter;padding:3px 8px;border-radius:9999px">✓ Complete</span>
-      <img src="${g.crop_url}" style="position:absolute;bottom:8px;right:8px;width:40px;height:50px;border-radius:5px;border:2px solid #fff;object-fit:cover">
+      <img src="${g.crop_url}" title="Original photo" style="position:absolute;bottom:8px;right:8px;width:40px;height:50px;border-radius:5px;border:2px solid #fff;object-fit:cover">
+      <button onclick="regenImage(${n})" ${S.busyImg[n]?"disabled":""} style="position:absolute;bottom:8px;left:8px;background:rgba(255,255,255,.92);border:none;border-radius:8px;font:500 11px Inter;color:#C4654A;padding:6px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:5px">${S.busyImg[n]?'<span class="spin" style="width:11px;height:11px;border-width:2px"></span> Rendering…':"↻ Regenerate"}</button>
     </div>
+    <div style="font:400 10px Inter;color:#9CA3AF;margin-bottom:12px;display:flex;align-items:center;gap:4px">AI preview — verify logos/text against the original photo (inset)</div>
     <input class="field" style="font-weight:500;font-size:13px;margin-bottom:10px" value="${esc(displayTitle(g))}" onchange="edits(${n}).title=this.value;render()">
     <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:12px">
       <input value="${esc(priceOf(g))}" onchange="edits(${n}).price=this.value" style="width:58px;background:transparent;border:none;border-bottom:1px dashed #C4654A;font:500 16px Inter;padding:0 0 1px">

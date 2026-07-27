@@ -52,7 +52,16 @@ def render_garment(garment_path: Path, model_path: Path, out_dir: Path,
 
     ok = [r for r in renders if r.get("path")]
     if not ok:
-        return {"renders": renders, "best": None, "ranking_reason": "all renders failed"}
+        # surface the specific failure so the UI can guide the user (NSFW filter,
+        # editing failure, overlap) instead of a generic "all renders failed"
+        err = (renders[0].get("error") if renders else "") or ""
+        if "nsfw" in err.lower():
+            reason = "Render blocked by content filter — the crop caught skin/background. Try Regenerate or re-crop."
+        elif "region_mismatch" in err or "editing_failed" in err:
+            reason = "Couldn't fit this garment — the crop may include other items. Try Regenerate or re-photograph with spacing."
+        else:
+            reason = f"Render failed: {err[:120]}" if err else "All renders failed"
+        return {"renders": renders, "best": None, "ranking_reason": reason}
     if len(ok) == 1:
         return {"renders": renders, "best": ok[0]["path"], "ranking_reason": "single successful render"}
 
