@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Try it on · OnAgain</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* No third-party scripts. No cookies. No localStorage/sessionStorage. Nothing about
+     the buyer is persisted — the try-on is stateless from the buyer's side. */
+  *{box-sizing:border-box}
+  body{margin:0;background:#FAFAF7;font-family:Inter,-apple-system,system-ui,sans-serif;color:#1A1A1A;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:448px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
+  .surface{background:#F5F3EE;border-radius:12px;overflow:hidden;margin:16px;flex:1;display:flex;flex-direction:column}
+  .hero{width:100%;background:#efece5;display:block}
+  .hero img{width:100%;display:block;object-fit:contain;max-height:60vh}
+  .pad{padding:24px}
+  .btn{display:block;width:100%;background:#C4654A;color:#fff;border:none;font:500 15px Inter;padding:14px;border-radius:8px;cursor:pointer;text-align:center;text-decoration:none}
+  .btn:hover{background:#A8523B}
+  .btn-out{display:block;width:100%;background:transparent;color:#6B7280;border:1px solid #E5E2DB;font:500 15px Inter;padding:14px;border-radius:8px;cursor:pointer;text-align:center;margin-top:10px}
+  .btn-out:hover{background:#FAFAF7}
+  .title{font-size:18px;font-weight:500;margin:0 0 4px}
+  .meta{font-size:14px;color:#6B7280;margin:0 0 20px}
+  .ask{font-size:22px;font-weight:500;line-height:1.25;margin:0 0 20px}
+  .privacy{font-size:12px;color:#6B7280;line-height:1.5;margin-top:16px}
+  .foot{text-align:center;font-size:12px;color:#6B7280;padding:14px}
+  .foot b{color:#1A1A1A}.foot i{font-style:normal;color:#C4654A}
+  .spin{display:inline-block;width:28px;height:28px;border:3px solid #C4654A;border-top-color:transparent;border-radius:50%;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .center{text-align:center;padding:40px 24px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="surface" id="surface"></div>
+  <div class="foot">Powered by <b>on</b><i>again</i></div>
+</div>
+<script>
+const GARMENT_ID = "__GARMENT_ID__";
+let G = null;                 // garment metadata
+const el = document.getElementById("surface");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+async function load(){
+  try{ G = await (await fetch("/api/listing/" + encodeURIComponent(GARMENT_ID))).json(); }
+  catch(e){ G = null; }
+  if(!G || G.detail){ el.innerHTML = `<div class="center"><p>This listing isn't available.</p></div>`; return; }
+  landing();
+}
+
+function heroImg(url){ return url ? `<div class="hero"><img src="${url}"></div>` : ""; }
+function priceStr(){ return typeof G.price === "number" ? "$"+G.price : esc(G.price||""); }
+
+function landing(){
+  el.innerHTML = `
+    ${heroImg(G.hero_photo)}
+    <div class="pad">
+      <div class="title">${esc(G.title)} · ${priceStr()}</div>
+      <div class="ask">Want to see how this looks on you?</div>
+      <button class="btn" onclick="pickSelfie()">📷 Upload your photo</button>
+      <p class="privacy">Your photo is used once to show you this garment and is immediately deleted. We don't store your image or share it with anyone.</p>
+    </div>`;
+}
+
+function processing(){
+  el.innerHTML = `
+    ${heroImg(G.hero_photo)}
+    <div class="center">
+      <div style="margin-bottom:16px"><span class="spin"></span></div>
+      <div style="font-size:16px;font-weight:500;margin-bottom:6px">Trying it on…</div>
+      <div style="font-size:14px;color:#6B7280">This usually takes about 10 seconds.</div>
+    </div>`;
+}
+
+function result(r){
+  el.innerHTML = `
+    <div class="hero"><img src="${r.render_url}" style="max-height:70vh"></div>
+    <div class="pad">
+      <div class="title">${esc(r.garment_title)} · ${esc(typeof r.garment_price==="number"?"$"+r.garment_price:r.garment_price||"")}</div>
+      <a class="btn" href="${esc(r.buy_url||"#")}" target="_blank" rel="noopener" style="margin-top:14px">Buy on ${esc((r.platform||"marketplace").replace(/^./,c=>c.toUpperCase()))} →</a>
+      <button class="btn-out" onclick="landing()">Try another photo</button>
+    </div>`;
+}
+
+function errorState(){
+  el.innerHTML = `
+    ${heroImg(G.hero_photo)}
+    <div class="pad">
+      <div style="font-size:16px;font-weight:500;margin:0 0 8px">We couldn't generate a try-on preview this time.</div>
+      <p style="font-size:14px;color:#6B7280;line-height:1.5;margin:0 0 20px">Try a different photo — a full-body or waist-up shot works best.</p>
+      <button class="btn" onclick="pickSelfie()">📷 Try again</button>
+    </div>`;
+}
+
+function pickSelfie(){
+  const inp = document.createElement("input");
+  inp.type = "file"; inp.accept = "image/*";
+  inp.onchange = () => inp.files[0] && submit(inp.files[0]);
+  inp.click();
+}
+
+async function submit(file){
+  processing();
+  const fd = new FormData();
+  fd.append("garment_id", GARMENT_ID);
+  fd.append("selfie", file);
+  try{
+    const res = await fetch("/api/tryon", { method:"POST", body:fd });
+    if(!res.ok) throw new Error("render failed");
+    result(await res.json());
+  }catch(e){ errorState(); }
+}
+
+load();
+</script>
+</body>
+</html>

@@ -1,7 +1,8 @@
 /* OnAgain seller UI — vanilla JS against src/api.py */
 
 const S = {
-  screen: "upload",
+  screen: "inventory",
+  inventory: [],
   batchId: null,
   sourceUrl: null,
   garments: [],           // from /parse
@@ -15,6 +16,7 @@ const S = {
   busyCopy: {},           // garment_number -> true while regen in flight
   busyImg: {},            // garment_number -> true while VTO re-render in flight
   copied: {},             // garment_number -> true briefly after copy
+  copiedLink: {},         // garment_number -> true briefly after try-on link copy
   parsing: false,
 };
 let pollTimer = null;
@@ -23,9 +25,14 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const PCOL = { poshmark:["#DBEAFE","#1E40AF"], depop:["#F3E8FF","#9333EA"], ebay:["#ECFDF5","#047857"], vinted:["#ECFEFF","#0891B2"] };
 const PLAT_RULES = { poshmark:"Brand-led · detailed condition & styling", depop:"Casual tone · aesthetic hashtags", ebay:"Keyword-dense 80-char title · specifics", vinted:"Short & friendly · category hashtags" };
-const STEP_LABELS = { identify:"Identifying", vto:"Generating model photo", price:"Researching price", copy:"Drafting listing" };
 
-function go(screen){ S.screen = screen; if(screen==="upload"){ resetBatch(); } render(); }
+function go(screen){ S.screen = screen; if(screen==="upload"){ resetBatch(); } if(screen==="inventory"){ loadInventory(); } render(); }
+
+async function loadInventory(){
+  try{ const d = await (await fetch("/api/inventory")).json(); S.inventory = d.listings || []; }
+  catch(e){ S.inventory = []; }
+  render();
+}
 function resetBatch(){ S.batchId=null; S.sourceUrl=null; S.garments=[]; S.status=null; S.copyMode={}; S.platform={}; S.edits={}; S.approved={}; if(pollTimer){clearInterval(pollTimer);pollTimer=null;} }
 
 /* ---------------- upload + parse ---------------- */
@@ -119,6 +126,33 @@ function factEdit(n, key, value){
 function setPlatform(n, p){ S.platform[n] = p; regenCopy(n); }
 function setCopyMode(n, m){ S.copyMode[n] = m; render(); }
 
+function garmentId(n){ return `${S.batchId}_${n}`; }
+function tryonLink(g){ return `${location.host}/tryon/${garmentId(g.garment_number)}`; }
+function copyTryonLink(n){
+  navigator.clipboard.writeText(location.origin + `/tryon/${garmentId(n)}`).catch(()=>{});
+  S.copiedLink[n] = true; render();
+  setTimeout(() => { S.copiedLink[n] = false; render(); }, 1600);
+}
+
+async function approveListing(n){
+  const g = garment(n); if(!g) return;
+  const e = edits(n), id = g.identity || {};
+  const payload = {
+    garment_id: garmentId(n),
+    title: displayTitle(g),
+    price: priceOf(g),
+    platform: currentPlatform(g),
+    brand: e.brand ?? id.brand ?? null,
+  };
+  try{
+    await fetch(`/api/batch/${S.batchId}/garment/${n}/approve`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(payload),
+    });
+  }catch(err){ console.error(err); }
+  S.approved[n] = true; render();
+}
+
 async function regenImage(n){
   const g = garment(n); if(!g) return;
   S.busyImg[n] = true; render();
@@ -176,12 +210,13 @@ function flagsOf(g){
 /* ---------------- renderers ---------------- */
 
 function render(){
-  $("crumb").textContent = { upload:"New batch", processing:"Processing", review:"Review" }[S.screen] || "";
+  $("crumb").textContent = { inventory:"Inventory", upload:"New batch", processing:"Processing", review:"Review" }[S.screen] || "";
   const m = $("main");
   // processing screen updates in place across polls to avoid full-DOM flicker
   if(S.screen === "processing" && render._screen === "processing"){ patchProcessing(); return; }
   render._screen = S.screen;
-  if(S.screen === "upload") m.innerHTML = rUpload();
+  if(S.screen === "inventory") m.innerHTML = rInventory();
+  else if(S.screen === "upload") m.innerHTML = rUpload();
   else if(S.screen === "processing") m.innerHTML = rProcessing();
   else if(S.screen === "review") m.innerHTML = rReview();
 }
@@ -200,6 +235,35 @@ function patchProcessing(){
     const hero = document.getElementById(`hero-${g.garment_number}`);
     if(hero){ const h = heroHtml(g); if(hero.dataset.state !== h.state){ hero.innerHTML = h.html; hero.dataset.state = h.state; } }
   });
+}
+
+function rInventory(){
+  const items = S.inventory || [];
+  const cards = items.map(it => {
+    const col = PCOL[(it.platform||"").toLowerCase()] || ["#F5F3EE","#6B7280"];
+    const hero = it.hero_photo
+      ? `<img src="${it.hero_photo}" style="width:100%;height:100%;object-fit:contain">`
+      : `<span style="color:#9CA3AF;font:500 10px ui-monospace,monospace">no photo</span>`;
+    return `<div class="card fade">
+      <div style="position:relative;aspect-ratio:4/5;border-radius:8px;overflow:hidden;background:#efece5;display:flex;align-items:center;justify-content:center;margin-bottom:11px">
+        ${hero}
+        <span style="position:absolute;top:9px;left:9px;background:#F0FDF4;color:#16A34A;font:500 11px Inter;padding:3px 8px;border-radius:9999px">✓ Listed</span>
+        <span style="position:absolute;bottom:9px;right:9px;display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.92);color:#6B7280;font:500 11px Inter;padding:3px 8px;border-radius:9999px" title="try-ons">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="12" rx="10" ry="6.5" stroke="#6B7280" stroke-width="2.2"/><circle cx="12" cy="12" r="3" fill="#6B7280"/></svg>${it.tryon_count||0} tried on</span>
+      </div>
+      <div style="font-size:13px;font-weight:500;margin-bottom:6px">${esc(it.title)}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <span style="font-size:15px;font-weight:500">${typeof it.price==="number"?"$"+it.price:esc(it.price)}</span>
+        <span style="background:${col[0]};color:${col[1]};font:500 11px Inter;padding:3px 9px;border-radius:9999px">${esc(it.platform)}</span></div>
+      <button class="btn-ghost" style="width:100%" onclick="window.open('/tryon/${esc(it.garment_id)}','_blank')">Open try-on link</button>
+    </div>`;
+  }).join("");
+  const empty = `<div style="text-align:center;padding:48px 20px;color:#6B7280"><p style="font-size:14px">No listings yet.</p>
+    <button class="btn" onclick="go('upload')">+ New batch</button></div>`;
+  return `<div class="fade">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:20px">
+      <h1>Inventory</h1><span style="font-size:13px;color:#6B7280">${items.length} listed</span></div>
+    ${items.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px">${cards}</div>` : empty}</div>`;
 }
 
 function rUpload(){
@@ -250,16 +314,48 @@ function rUpload(){
     ${inner}</div>`;
 }
 
+/* Collapse the 4 backend steps into 3 product-facing workers:
+   Identifying (identify) · Creating listing (vto+price+copy) · Ready (all done). */
+function workerStages(g){
+  const p = g.progress || {};
+  const done = s => p[s] === "done";
+  const failed = s => p[s] === "failed";
+  const active = s => p[s] === "active";
+  const anyStarted = ["identify","vto","price","copy"].some(s => p[s]);
+
+  // Identifying: reflects the identify step
+  let idState = "wait", idDetail = "";
+  if(done("identify")){ idState = "done"; const i = g.identity || {};
+    idDetail = [i.color, i.type, i.brand].filter(Boolean).map(esc).join(", "); }
+  else if(active("identify") || (anyStarted && !p.identify)) idState = "active";
+  else if(failed("identify")) idState = "failed";
+
+  // Creating listing: covers vto/price/copy together
+  const cl = ["vto","price","copy"];
+  let clState = "wait";
+  if(cl.every(done)) clState = "done";
+  else if(cl.some(failed) && !g.vto?.best_url && !cl.some(active)) clState = "failed";
+  else if(done("identify") && (cl.some(active) || cl.some(done))) clState = "active";
+
+  // Ready: all four done (or done-with-failures)
+  const allTerminal = ["identify","vto","price","copy"].every(s => p[s]==="done" || p[s]==="failed");
+  const readyState = allTerminal ? (g.vto?.best_url ? "done" : "failed") : "wait";
+
+  return [
+    { label: idState === "done" && idDetail ? `Identified — ${idDetail}` : "Identifying", state: idState },
+    { label: "Creating listing", state: clState },
+    { label: "Ready", state: readyState },
+  ];
+}
+
 function stepRows(g){
-  const prog = g.progress || {};
-  return Object.keys(STEP_LABELS).map(k => {
-    const st = prog[k] || "wait";
+  return workerStages(g).map(s => {
     let dot, color = "#9CA3AF", weight = "400";
-    if(st==="done"){ dot = `<span class="stepdot" style="background:#16A34A;color:#fff">✓</span>`; color="#6B7280"; }
-    else if(st==="active"){ dot = `<span class="spin" style="width:14px;height:14px;border-width:2px;border-color:#D97706;border-top-color:transparent"></span>`; color="#1A1A1A"; weight="500"; }
-    else if(st==="failed"){ dot = `<span class="stepdot" style="background:#DC2626;color:#fff">!</span>`; color="#DC2626"; weight="500"; }
+    if(s.state==="done"){ dot = `<span class="stepdot" style="background:#16A34A;color:#fff">✓</span>`; color="#6B7280"; }
+    else if(s.state==="active"){ dot = `<span class="spin" style="width:14px;height:14px;border-width:2px;border-color:#D97706;border-top-color:transparent"></span>`; color="#1A1A1A"; weight="500"; }
+    else if(s.state==="failed"){ dot = `<span class="stepdot" style="background:#DC2626;color:#fff">!</span>`; color="#DC2626"; weight="500"; }
     else dot = `<span class="stepdot" style="border:1.5px solid #E5E2DB"></span>`;
-    return `<div style="display:flex;align-items:center;gap:8px">${dot}<span style="color:${color};font-weight:${weight};font-size:12px">${STEP_LABELS[k]}</span></div>`;
+    return `<div style="display:flex;align-items:center;gap:8px">${dot}<span style="color:${color};font-weight:${weight};font-size:12px">${s.label}</span></div>`;
   }).join("");
 }
 
@@ -300,7 +396,7 @@ function rReview(){
   return `<div class="fade">
     <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:20px">
       <div><h1>Review listings</h1><p class="sub">${approvedCount} of ${gs.length} approved · add sizes, then list</p></div>
-      </div>
+      <button class="btn-ghost" onclick="go('inventory')">Done → inventory</button></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:16px;align-items:stretch">${cards}</div></div>`;
 }
 
@@ -332,10 +428,6 @@ function rReviewCard(g){
   const v = currentVariant(g);
   const plat = currentPlatform(g);
   const kw = (S.copyMode[n] || "keyword") === "keyword";
-  const platformPills = ["poshmark","depop","ebay","vinted"].map(p => {
-    const on = p === plat, col = PCOL[p];
-    return `<span class="pill" style="${on?`background:${col[0]};color:${col[1]};border-color:transparent`:""}" onclick="setPlatform(${n},'${p}')">${p[0].toUpperCase()+p.slice(1)}</span>`;
-  }).join("");
   const flags = flagsOf(g).map(f => `<span class="flag">⚠ ${f}</span>`).join("");
   const size = e.size ?? id.visible_size ?? "";
   const spec = (key, val) => `<div class="specrow"><span class="speck">${key}</span>
@@ -368,10 +460,12 @@ function rReviewCard(g){
       </div></div>
     <div style="margin-bottom:12px">
       <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:6px">
-        <span class="microlabel" style="margin:0">List on</span>
+        <span class="microlabel" style="margin:0">Format for</span>
         <span style="font:400 10px Inter;color:#9CA3AF">${PLAT_RULES[plat]||""}</span></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">${platformPills}</div>
-      ${g.channel?.primary ? `<div style="display:flex;align-items:center;gap:5px;font:500 10px Inter;color:#C4654A;margin-top:7px"><span style="width:5px;height:5px;border-radius:50%;background:#C4654A"></span>Recommended · ${esc(g.channel.primary_reasoning||g.channel.primary)}</div>`:""}
+      <select onchange="setPlatform(${n}, this.value)" style="width:100%;background:#FAFAF7;border:1px solid #E5E2DB;border-radius:8px;font:500 13px Inter;color:#1A1A1A;padding:8px 10px;cursor:pointer">
+        ${["poshmark","depop","ebay","vinted"].map(p => `<option value="${p}" ${p===plat?"selected":""}>${p[0].toUpperCase()+p.slice(1)}</option>`).join("")}
+      </select>
+      ${g.channel?.primary ? `<div style="font:400 10px Inter;color:#9CA3AF;margin-top:6px">Sellers often list items like this on ${esc(g.channel.primary[0].toUpperCase()+g.channel.primary.slice(1))}</div>` : ""}
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
       <span class="microlabel" style="margin:0">Copy style</span>
@@ -389,12 +483,17 @@ function rReviewCard(g){
     <div style="display:flex;align-items:center;justify-content:space-between;background:#F5F3EE;border:1px dashed #DDD8CF;border-radius:8px;padding:8px 10px;margin-bottom:12px">
       <span style="font:500 11px Inter;color:#6B7280">Seller voice — match my tone</span>
       <span style="font:600 9px Inter;color:#9CA3AF;background:#FAFAF7;border:1px solid #E5E2DB;padding:2px 7px;border-radius:9999px;text-transform:uppercase;letter-spacing:.06em">Soon</span></div>
+    <div style="display:flex;align-items:center;gap:8px;background:#FAFAF7;border:1px solid #E5E2DB;border-radius:8px;padding:8px 10px;margin-bottom:12px">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="flex:none"><ellipse cx="12" cy="12" rx="10" ry="6.5" stroke="#6B7280" stroke-width="2.2"/><circle cx="12" cy="12" r="3" fill="#6B7280"/></svg>
+      <span style="flex:1;min-width:0;font:11px ui-monospace,monospace;color:#6B7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${tryonLink(g)}</span>
+      <span style="cursor:pointer;font:500 11px Inter;color:${S.copiedLink[n]?"#16A34A":"#C4654A"}" onclick="copyTryonLink(${n})">${S.copiedLink[n]?"Copied ✓":"Copy"}</span></div>
     ${flags?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${flags}</div>`:""}
     <div style="display:flex;gap:8px;margin-top:auto">
       <button class="btn-ghost" onclick="downloadPhoto(${n})">Photo</button>
-      <button class="btn" style="flex:1" onclick="S.approved[${n}]=true;render()">Approve & list</button>
+      <button class="btn" style="flex:1" onclick="approveListing(${n})">Approve & list</button>
     </div>
   </div>`;
 }
 
-loadBases().then(render);
+loadBases();
+loadInventory();
