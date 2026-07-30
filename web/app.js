@@ -126,6 +126,7 @@ function factEdit(n, key, value){
 function setPlatform(n, p){ S.platform[n] = p; regenCopy(n); }
 function setCopyMode(n, m){ S.copyMode[n] = m; render(); }
 
+function baseLabel(b){ return {"mannequin":"female mannequin","mannequin-male":"male mannequin","model":"model photo"}[b] || b; }
 function garmentId(n){ return `${S.batchId}_${n}`; }
 function tryonLink(g){ return `${location.host}/tryon/${garmentId(g.garment_number)}`; }
 function copyTryonLink(n){
@@ -228,7 +229,7 @@ function patchProcessing(){
   const doneCount = gs.filter(g => Object.values(g.progress||{}).length &&
     Object.values(g.progress||{}).every(v => v==="done"||v==="failed")).length;
   const sub = document.getElementById("proc-sub");
-  if(sub) sub.textContent = `${doneCount} of ${gs.length} complete · rendering as ${S.base}`;
+  if(sub) sub.textContent = `${doneCount} of ${gs.length} complete · rendering as ${baseLabel(S.base)}`;
   gs.forEach(g => {
     const steps = document.getElementById(`steps-${g.garment_number}`);
     if(steps) steps.innerHTML = stepRows(g);
@@ -285,12 +286,12 @@ function rUpload(){
       return `<div class="box" style="left:${b.left}%;top:${b.top}%;width:${b.width}%;height:${b.height}%">
         <span class="boxlabel">${esc(label)}</span></div>`;
     }).join("");
-    const baseCards = ["mannequin","model"].map(b => `
+    const baseCards = [["mannequin","Female mannequin"],["mannequin-male","Male mannequin"]].map(([b,label]) => `
       <div class="basecard ${S.base===b?"sel":""}" onclick="S.base='${b}';render()">
         <div style="aspect-ratio:1;border-radius:8px;overflow:hidden;margin-bottom:10px;background:#ece9e2">
-          <img src="/api/base/${b}" style="width:100%;height:100%;object-fit:cover"></div>
+          <img src="/api/base/${b}" style="width:100%;height:100%;object-fit:contain"></div>
         <div style="display:flex;align-items:center;justify-content:space-between">
-          <span style="font-size:13px;font-weight:500">${b==="mannequin"?"Mannequin":"Model photo"}</span>
+          <span style="font-size:13px;font-weight:500">${label}</span>
           <span style="width:16px;height:16px;border-radius:9999px;background:${S.base===b?"#C4654A":"transparent"};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px">${S.base===b?"✓":""}</span>
         </div></div>`).join("");
     inner = `<div class="fade">
@@ -384,7 +385,7 @@ function rProcessing(){
   }).join("");
   return `<div class="fade">
     <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:20px">
-      <div><h1>Processing batch</h1><p class="sub" id="proc-sub">${doneCount} of ${gs.length||"…"} complete · rendering as ${S.base}</p></div>
+      <div><h1>Processing batch</h1><p class="sub" id="proc-sub">${doneCount} of ${gs.length||"…"} complete · rendering as ${baseLabel(S.base)}</p></div>
       <button class="btn-ghost" onclick="S.screen='review';render()">Skip to review →</button></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px">${cards}</div></div>`;
 }
