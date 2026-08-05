@@ -1,0 +1,34 @@
+{
+  "seller_name": "Demo Seller",
+  "default_sizes": {
+    "tops": "L",
+    "blouses": "L",
+    "shirts": "L",
+    "sweaters": "L",
+    "jackets": "L",
+    "coats": "L",
+    "t-shirts": "L",
+    "tank_tops": "L",
+    "hoodies": "L",
+
+    "pants": "L",
+    "jeans": "32x32",
+    "shorts": "L",
+    "trousers": "L",
+    "leggings": "L",
+    "joggers": "L",
+
+    "dresses": "12",
+    "skirts": "12",
+    "jumpsuits": "12",
+    "rompers": "12",
+
+    "activewear": "L",
+    "swimwear": "L",
+
+    "shoes": "10",
+    "boots": "10"
+  },
+  "department": "women",
+  "size_system": "US"
+}

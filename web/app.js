@@ -198,10 +198,18 @@ async function downloadPhoto(n){
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }catch(e){ alert("Download failed: " + e); }
 }
+// resolved size + its source ('tag' | 'profile_default' | null), honoring seller edits
+function sizeOf(g){
+  const e = edits(g.garment_number), id = g.identity || {};
+  if(e.size !== undefined) return { size: e.size, source: e.size ? "edited" : null };
+  return { size: id.size ?? id.visible_size ?? "", source: id.size_source ?? (id.visible_size ? "tag" : null) };
+}
+
 function flagsOf(g){
   const f = [], e = edits(g.garment_number);
-  const size = e.size ?? g.identity?.visible_size;
-  if(!size) f.push("Confirm size");
+  const s = sizeOf(g);
+  // Confirm size when missing OR came from the profile default (not the tag/edit)
+  if(!s.size || s.source === "profile_default") f.push("Confirm size");
   if(!e.measurements) f.push("Add measurements");
   const gf = g.copy?.flags || {};
   if(gf.needs_flaw_photos) f.push("Add flaw photos");
@@ -430,7 +438,9 @@ function rReviewCard(g){
   const plat = currentPlatform(g);
   const kw = (S.copyMode[n] || "keyword") === "keyword";
   const flags = flagsOf(g).map(f => `<span class="flag">⚠ ${f}</span>`).join("");
-  const size = e.size ?? id.visible_size ?? "";
+  const sz = sizeOf(g);
+  const size = sz.size;
+  const fromProfile = sz.source === "profile_default";
   const spec = (key, val) => `<div class="specrow"><span class="speck">${key}</span>
     <input class="specv" value="${esc(val)}" onchange="factEdit(${n},'${{Brand:"brand",Color:"color",Material:"material_estimate",Condition:"condition_estimate"}[key]}',this.value)" style="${key==="Brand"?"border-bottom-color:#C4654A;font-weight:600":""}"></div>`;
   return `<div class="card" style="display:flex;flex-direction:column">
@@ -447,8 +457,8 @@ function rReviewCard(g){
       <span style="font-size:11px;color:#9CA3AF">${g.pricing?.suggested_low?`$${g.pricing.suggested_low}–${g.pricing.suggested_high}`:"no comp data"}</span>
       <span style="font-size:11px;color:#C4654A;font-weight:500">${g.pricing?.comp_count||0} comps</span></div>
     <div style="display:flex;gap:8px;margin-bottom:12px">
-      <div style="width:76px"><div class="microlabel">Size</div>
-        <input class="field" style="border-color:${size?"#E5E2DB":"#F0C89A"}" placeholder="e.g. M" value="${esc(size)}" onchange="factEdit(${n},'size',this.value)"></div>
+      <div style="width:96px"><div class="microlabel">Size${fromProfile?` <span style="color:#C4654A;font-weight:500" title="From your sizing profile — not read from a tag">· profile</span>`:""}</div>
+        <input class="field" style="border-color:${(size && !fromProfile)?"#E5E2DB":"#F0C89A"}" placeholder="e.g. M" value="${esc(size)}" onchange="factEdit(${n},'size',this.value)"></div>
       <div style="flex:1"><div class="microlabel">Measurements</div>
         <input class="field" style="font-weight:400;border-color:${e.measurements?"#E5E2DB":"#F0C89A"}" placeholder="Waist 32in, Inseam 32in…" value="${esc(e.measurements||"")}" onchange="edits(${n}).measurements=this.value;render()"></div></div>
     <div style="margin-bottom:12px"><div class="microlabel">Item specifics</div>
