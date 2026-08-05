@@ -13,14 +13,22 @@ from src.utils.claude_client import ask_vision
 
 RENDERS_PER_GARMENT = 2  # ponytail: hard unit budget — 2 renders max per garment
 
-TYPE_TO_CATEGORY = {
+# profile-key -> VTO category. The ID agent's raw type is first normalized via
+# identifier.TYPE_MAP (shared vocabulary) so the two never drift.
+KEY_TO_CATEGORY = {
     "pants": "lower_body", "jeans": "lower_body", "shorts": "lower_body",
-    "skirt": "lower_body", "trousers": "lower_body", "leggings": "lower_body",
-    "shirt": "upper_body", "blouse": "upper_body", "top": "upper_body",
-    "t-shirt": "upper_body", "sweater": "upper_body", "jacket": "upper_body",
-    "coat": "upper_body", "hoodie": "upper_body", "cardigan": "upper_body",
-    "dress": "full_body", "jumpsuit": "full_body", "romper": "full_body",
-    "gown": "full_body", "shoes": "shoes", "sneakers": "shoes", "boots": "shoes",
+    "skirts": "lower_body", "trousers": "lower_body", "leggings": "lower_body",
+    "joggers": "lower_body",
+    "shirts": "upper_body", "blouses": "upper_body", "tops": "upper_body",
+    "t-shirts": "upper_body", "tank_tops": "upper_body", "sweaters": "upper_body",
+    "jackets": "upper_body", "coats": "upper_body", "hoodies": "upper_body",
+    "dresses": "full_body", "jumpsuits": "full_body", "rompers": "full_body",
+    "shoes": "shoes", "boots": "shoes",
+}
+# direct fallbacks for raw types not in the profile vocabulary
+RAW_TO_CATEGORY = {
+    "dress": "full_body", "gown": "full_body", "jumpsuit": "full_body", "romper": "full_body",
+    "skirt": "lower_body", "sneakers": "shoes",
 }
 
 RANK_PROMPT = ("This is render #{n} of a virtual try-on of the same garment. "
@@ -30,7 +38,17 @@ RANK_PROMPT = ("This is render #{n} of a virtual try-on of the same garment. "
 
 
 def category_for(garment_type: str) -> str:
-    return TYPE_TO_CATEGORY.get(str(garment_type).lower().strip(), "auto")
+    """Map an ID-agent garment type to a VTO category, via the shared TYPE_MAP
+    vocabulary so it stays in sync with sizing. Falls back to 'auto' only when
+    truly unknown (VTO then guesses — last resort)."""
+    from src.agents.identifier import TYPE_MAP
+    t = str(garment_type).lower().strip()
+    key = TYPE_MAP.get(t)                     # raw type -> profile key
+    if key and key in KEY_TO_CATEGORY:
+        return KEY_TO_CATEGORY[key]
+    if t in RAW_TO_CATEGORY:
+        return RAW_TO_CATEGORY[t]
+    return "auto"
 
 
 def render_garment(garment_path: Path, model_path: Path, out_dir: Path,
