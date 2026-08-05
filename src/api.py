@@ -131,7 +131,9 @@ def _run_batch(batch_id: str, base: Path, numbers):
                if not numbers or gm["garment_number"] in numbers]
     # garments are independent — process them concurrently
     from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=min(4, len(targets) or 1)) as ex:
+    # ponytail: 2-wide, not 4 — Bedrock Haiku throttles under heavier bursts;
+    # retry-with-backoff in claude_client covers the rest. Still ~2x faster than serial.
+    with ThreadPoolExecutor(max_workers=min(2, len(targets) or 1)) as ex:
         list(ex.map(lambda gm: _process_garment(batch, gm, base), targets))
     batch["status"] = "done"
 

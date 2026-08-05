@@ -2,11 +2,31 @@
 
 import base64
 import json
+import random
+import time
 from pathlib import Path
 
 import requests
 
 from src import config
+
+
+def _with_retry(fn, tries=5, base=1.0):
+    """Retry on Bedrock/HTTP throttling with exponential backoff + jitter.
+
+    Parallel garment processing bursts many Claude calls at once; Bedrock Haiku
+    throttles them. Retrying self-heals instead of failing the whole step.
+    """
+    for i in range(tries):
+        try:
+            return fn()
+        except Exception as e:
+            msg = str(e).lower()
+            throttled = ("throttl" in msg or "too many" in msg or "rate" in msg
+                         or "429" in msg or "503" in msg or "serviceunavailable" in msg)
+            if not throttled or i == tries - 1:
+                raise
+            time.sleep(base * (2 ** i) + random.uniform(0, 0.5))
 
 
 def _image_block(image_path: Path) -> dict:
@@ -26,25 +46,29 @@ def ask_vision(image_path: Path, prompt: str, cheap: bool = False, max_tokens: i
 
     if config.ANTHROPIC_API_KEY:
         model = config.CHEAP_ANTHROPIC_MODEL if cheap else config.ANTHROPIC_MODEL
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": config.ANTHROPIC_API_KEY,
-                     "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"},
-            json={"model": model, "max_tokens": max_tokens, "messages": messages},
-            timeout=90,
-        )
-        r.raise_for_status()
-        return r.json()["content"][0]["text"]
+        def call():
+            r = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={"x-api-key": config.ANTHROPIC_API_KEY,
+                         "anthropic-version": "2023-06-01",
+                         "content-type": "application/json"},
+                json={"model": model, "max_tokens": max_tokens, "messages": messages},
+                timeout=90,
+            )
+            r.raise_for_status()
+            return r.json()["content"][0]["text"]
+        return _with_retry(call)
 
     import boto3  # ponytail: lazy import; only needed on the Bedrock path
     client = boto3.client("bedrock-runtime")
-    resp = client.invoke_model(
-        modelId=config.BEDROCK_MODEL,
-        body=json.dumps({"anthropic_version": "bedrock-2023-05-31",
-                         "max_tokens": max_tokens, "messages": messages}),
-    )
-    return json.loads(resp["body"].read())["content"][0]["text"]
+    def call():
+        resp = client.invoke_model(
+            modelId=config.BEDROCK_MODEL,
+            body=json.dumps({"anthropic_version": "bedrock-2023-05-31",
+                             "max_tokens": max_tokens, "messages": messages}),
+        )
+        return json.loads(resp["body"].read())["content"][0]["text"]
+    return _with_retry(call)
 
 
 def ask_vision_json(image_path: Path, prompt: str, cheap: bool = False, max_tokens: int = 1500):

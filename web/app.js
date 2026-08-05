@@ -67,19 +67,23 @@ async function generate(){
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({ base: S.base }),
   });
-  S.screen = "processing"; render();
-  pollTimer = setInterval(poll, 2000); poll();
+  S.screen = "processing";
+  await poll();                                   // seed S.status before first paint
+  pollTimer = setInterval(poll, 2000);
 }
 
 async function poll(){
   if(!S.batchId) return;
-  const d = await (await fetch(`/api/batch/${S.batchId}`)).json();
-  S.status = d;
-  if(d.status === "done" && S.screen === "processing"){
-    clearInterval(pollTimer); pollTimer = null;
-    S.screen = "review";
-  }
-  render();
+  try{
+    const d = await (await fetch(`/api/batch/${S.batchId}`)).json();
+    S.status = d;
+    // flip to review once the backend batch is done (regardless of per-step failures)
+    if(d.status === "done" && S.screen === "processing"){
+      if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+      S.screen = "review";
+    }
+  }catch(e){ console.error("poll error", e); return; }   // keep the interval alive
+  try{ render(); }catch(e){ console.error("render error", e); }
 }
 
 /* ---------------- review helpers ---------------- */
@@ -234,6 +238,11 @@ function render(){
    that changed, so images and layout never flicker. */
 function patchProcessing(){
   const gs = S.status?.garments || [];
+  // if the processing DOM isn't actually present (e.g. re-entered screen), rebuild it
+  if(gs.length && !document.getElementById(`steps-${gs[0].garment_number}`)){
+    document.getElementById("main").innerHTML = rProcessing();
+    return;
+  }
   const doneCount = gs.filter(g => Object.values(g.progress||{}).length &&
     Object.values(g.progress||{}).every(v => v==="done"||v==="failed")).length;
   const sub = document.getElementById("proc-sub");
