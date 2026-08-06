@@ -29,10 +29,23 @@ def _with_retry(fn, tries=5, base=1.0):
             time.sleep(base * (2 ** i) + random.uniform(0, 0.5))
 
 
+MAX_VISION_PX = 1568  # cap longest edge; large phone photos exceed model input limits
+
 def _image_block(image_path: Path) -> dict:
+    raw = image_path.read_bytes()
+    from PIL import Image
+    import io
+    im = Image.open(io.BytesIO(raw))
+    if max(im.size) > MAX_VISION_PX:
+        # downscale oversized images (24MP phone shots blow past Bedrock's input limit)
+        scale = MAX_VISION_PX / max(im.size)
+        im = im.convert("RGB").resize((int(im.width * scale), int(im.height * scale)))
+        buf = io.BytesIO(); im.save(buf, "JPEG", quality=90)
+        return {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
+                                            "data": base64.standard_b64encode(buf.getvalue()).decode()}}
     media = "image/png" if image_path.suffix.lower() == ".png" else "image/jpeg"
-    data = base64.standard_b64encode(image_path.read_bytes()).decode()
-    return {"type": "image", "source": {"type": "base64", "media_type": media, "data": data}}
+    return {"type": "image", "source": {"type": "base64", "media_type": media,
+                                        "data": base64.standard_b64encode(raw).decode()}}
 
 
 def ask_vision(image_path: Path, prompt: str, cheap: bool = False, max_tokens: int = 1500) -> str:
