@@ -98,7 +98,16 @@ def _process_garment(batch: dict, gm: dict, base: Path):
     try:
         prog["vto"] = "active"
         gtype = gm["identity"].get("type") or gm.get("type") or "auto"
-        gm["vto"] = vto.render_garment(crop, base, Path(batch["dir"]) / "renders", gtype)
+        renders_dir = Path(batch["dir"]) / "renders"
+        gm["vto"] = vto.render_garment(crop, base, renders_dir, gtype)
+        # Fallback: some garments (e.g. sleeveless tops) fail on the undressed
+        # mannequin base but render fine on a real-person base. Retry once.
+        fallback = ASSETS_DIR / "model.jpg"
+        if not gm["vto"]["best"] and base.name != "model.jpg" and fallback.exists():
+            alt = vto.render_garment(crop, fallback, renders_dir, gtype)
+            if alt["best"]:
+                alt["ranking_reason"] = "(model-base fallback) " + alt.get("ranking_reason", "")
+                gm["vto"] = alt
         prog["vto"] = "done" if gm["vto"]["best"] else "failed"
     except Exception as e:
         gm["vto"] = {"renders": [], "best": None, "ranking_reason": str(e)}
