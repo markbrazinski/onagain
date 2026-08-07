@@ -148,9 +148,11 @@ def _refine_crop(im, g: dict, work_dir: Path, stem: str):
     bottom = min(im.size[1], int(oy + b_pct / 100 * oh))
     if right - left < 50 or bottom - top < 50:
         return  # refusal to produce a degenerate crop
-    # ponytail: a "refinement" discarding >60% of the crop is nearly always a
-    # mis-grounding (low-contrast garments) — keep the original instead
-    if (right - left) * (bottom - top) < 0.4 * ow * oh:
+    # ponytail: a big shrink is normally mis-grounding, BUT when the issue is
+    # 'contains_other_items' a large shrink is the whole point (a neighbor garment
+    # bled into the box) — trust it there; only veto shrinks on other issues.
+    if (g["refine"].get("issue") != "contains_other_items"
+            and (right - left) * (bottom - top) < 0.4 * ow * oh):
         g["refine"]["rejected_shrink"] = True
         return
     refined_path = work_dir / f"{crop_path.stem}_refined.jpg"
