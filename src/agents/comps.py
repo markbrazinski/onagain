@@ -9,6 +9,7 @@ Claude text extraction from snippets. Max 2 searches per garment.
 
 import json
 import re
+from typing import Optional
 
 import requests
 
@@ -17,22 +18,46 @@ from src import config
 MAX_SEARCHES = 2
 
 
-def _web_search(query: str) -> str:
-    """Return concatenated titles+snippets from DDG HTML results (best effort)."""
+def _google_search(query: str) -> str:
+    """Google Programmable Search — real titles+snippets. Empty string if unkeyed/errors."""
+    if not (config.GOOGLE_API_KEY and config.GOOGLE_CSE_ID):
+        return ""
+    try:
+        r = requests.get(
+            "https://www.googleapis.com/customsearch/v1",
+            params={"key": config.GOOGLE_API_KEY, "cx": config.GOOGLE_CSE_ID,
+                    "q": query, "num": 10},
+            timeout=15,
+        )
+        r.raise_for_status()
+        items = r.json().get("items", [])
+        return " ".join(f"{i.get('title','')} — {i.get('snippet','')}" for i in items)[:8000]
+    except Exception:
+        return ""
+
+
+def _ddg_search(query: str) -> str:
+    """DDG HTML fallback (no key). Best-effort; DDG rate-limits headless hits."""
     try:
         r = requests.post(
             "https://html.duckduckgo.com/html/",
             data={"q": query},
-            headers={"User-Agent": "Mozilla/5.0 (OnAgain comps research)"},
+            # plain browser UA — a custom suffix gets DDG bot-flagged (empty shell)
+            headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                                   "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"},
             timeout=15,
         )
         r.raise_for_status()
-        # strip tags crudely; snippets are what we need, not structure
         text = re.sub(r"<[^>]+>", " ", r.text)
         text = re.sub(r"\s+", " ", text)
         return text[:8000]
     except Exception:
         return ""
+
+
+def _web_search(query: str) -> str:
+    """Google first (keyed, reliable), DDG fallback (keyless, flaky)."""
+    return _google_search(query) or _ddg_search(query)
 
 
 def _ask_text(prompt: str, max_tokens: int = 1000) -> str:
@@ -71,6 +96,47 @@ Return ONLY valid JSON:
 Only include entries with a clearly stated price plausibly for this item ($3-$500 for typical apparel). If nothing usable, return {{"comps": [], "notes": "..."}}."""
 
 
+GROUND_PROMPT = """Search the web for recent SOLD/asking resale prices for this second-hand item: {item}.
+Check eBay, Poshmark, Depop, Mercari. Return ONLY valid JSON (no prose, no markdown):
+{{"comps": [{{"source": "<site>", "title": "<what sold>", "sold_price": <number USD>}}],
+  "notes": "<one sentence on data quality>"}}
+Include 3-6 real comparable prices you found ($3-$500 typical apparel). If truly nothing, return {{"comps": [], "notes": "..."}}."""
+
+
+def _vertex_grounded(item_desc: str) -> Optional[dict]:
+    """Gemini + Google Search grounding via gcloud creds. Returns parsed comps dict, or None.
+
+    ponytail: replaces the DDG scrape + separate extraction — grounding does search
+    AND price-extraction server-side in one call. No CSE/cx, no console needed.
+    """
+    if not config.GCP_PROJECT:
+        return None
+    try:
+        import subprocess
+        token = subprocess.run(["gcloud", "auth", "print-access-token"],
+                               capture_output=True, text=True, timeout=15).stdout.strip()
+        if not token:
+            return None
+        url = (f"https://us-central1-aiplatform.googleapis.com/v1/projects/"
+               f"{config.GCP_PROJECT}/locations/us-central1/publishers/google/"
+               f"models/{config.VERTEX_MODEL}:generateContent")
+        r = requests.post(url, headers={"Authorization": f"Bearer {token}"},
+                          json={"contents": [{"role": "user",
+                                              "parts": [{"text": GROUND_PROMPT.format(item=item_desc)}]}],
+                                "tools": [{"googleSearch": {}}]},
+                          timeout=45)
+        r.raise_for_status()
+        cand = r.json().get("candidates", [{}])[0]
+        text = "".join(p.get("text", "") for p in cand.get("content", {}).get("parts", []))
+        if text.strip().startswith("```"):
+            text = text.split("```")[1].lstrip("json").strip()
+        # grounded answers sometimes wrap JSON in prose; grab the object
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        return json.loads(m.group(0)) if m else None
+    except Exception:
+        return None
+
+
 def _query_from_card(card: dict, broad: bool = False) -> str:
     parts = [card.get("brand"), card.get("type")]
     if not broad:
@@ -80,10 +146,18 @@ def _query_from_card(card: dict, broad: bool = False) -> str:
 
 
 def research(card: dict) -> dict:
-    item_desc = " ".join(str(card.get(k) or "") for k in ("brand", "type", "color")).strip()
+    item_desc = " ".join(str(card.get(k) or "") for k in ("brand", "type", "color", "visible_size")).strip()
     comps, notes, searches = [], "", 0
 
+    # primary: Gemini + Google Search grounding (real cited prices, no CSE/console)
+    grounded = _vertex_grounded(item_desc)
+    if grounded and grounded.get("comps"):
+        comps = grounded["comps"]
+        notes = grounded.get("notes", "")
+
     for broad in (False, True):
+        if comps:
+            break
         if searches >= MAX_SEARCHES or comps:
             break
         q = _query_from_card(card, broad=broad)

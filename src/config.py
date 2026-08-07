@@ -20,6 +20,11 @@ YOUCAM_API_BASE = "https://yce-api-01.makeupar.com/s2s/v2.0"
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
+# Comps agent search. Primary: Gemini + Google Search grounding on Vertex (uses gcloud
+# creds — no key/CSE/console). Falls back to keyless DDG scrape if project unset.
+GCP_PROJECT = os.environ.get("GCP_PROJECT", "preflight-hackathon")
+VERTEX_MODEL = os.environ.get("VERTEX_MODEL", "gemini-2.5-flash")
+
 # Vision model selection: Anthropic API (Sonnet) if key present, else Bedrock Haiku.
 # ponytail: this account's Bedrock access is Haiku-only; bump when Sonnet enabled.
 BEDROCK_MODEL = "us.anthropic.claude-haiku-4-5-20251001-v1:0"

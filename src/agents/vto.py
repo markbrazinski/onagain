@@ -91,7 +91,10 @@ def render_garment(garment_path: Path, model_path: Path, out_dir: Path,
             if text.startswith("```"):
                 text = text.split("```")[1].lstrip("json").strip()
             j = json.loads(text)
-            r["score"] = j.get("score", 0)
+            try:
+                r["score"] = int(float(j.get("score", 0)))  # Claude sometimes returns "7"
+            except (TypeError, ValueError):
+                r["score"] = 0
             r["notes"] = j.get("notes", "")
         except Exception as e:
             r["score"], r["notes"] = 0, f"rank error: {e}"
