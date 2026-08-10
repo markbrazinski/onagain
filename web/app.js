@@ -131,7 +131,7 @@ function setPlatform(n, p){ S.platform[n] = p; regenCopy(n); }
 function setCopyMode(n, m){ S.copyMode[n] = m; render(); }
 
 function baseLabel(b){ return {"mannequin":"female mannequin","mannequin-male":"male mannequin","model":"model photo"}[b] || b; }
-function garmentId(n){ return `${S.batchId}_${n}`; }
+function garmentId(n){ const g = garment(n); return (g && g.garment_id) || `${S.batchId}_${n}`; }
 function tryonLink(g){ return `${location.host}/tryon/${garmentId(g.garment_number)}`; }
 function copyTryonLink(n){
   navigator.clipboard.writeText(location.origin + `/tryon/${garmentId(n)}`).catch(()=>{});

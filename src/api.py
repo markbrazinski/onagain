@@ -22,6 +22,9 @@ from src.utils import inventory
 
 app = FastAPI(title="OnAgain")
 
+from src.demo_mode import router as _demo_router  # test-mode replay (golden bundle)
+app.include_router(_demo_router)
+
 BATCHES_DIR = config.WORK_DIR / "batches"
 LISTINGS_DIR = config.WORK_DIR / "listings"   # stable per-listing hero photos + json
 ASSETS_DIR = config.REPO_ROOT / "assets" / "bases"
@@ -345,9 +348,6 @@ async def tryon(garment_id: str = Form(...), selfie: UploadFile = File(...)):
       - selfie written to a temp path, deleted right after render (or on failure)
       - only the render is kept (24h-equivalent; local file)
     """
-    item = inventory.get(garment_id) if garment_id else None
-    if not item:
-        raise HTTPException(400, "invalid garment_id")
     if not selfie:
         raise HTTPException(400, "no selfie")
     data = await selfie.read()
@@ -356,6 +356,21 @@ async def tryon(garment_id: str = Form(...), selfie: UploadFile = File(...)):
     ct = (selfie.content_type or "").lower()
     if "jpeg" not in ct and "jpg" not in ct and "png" not in ct:
         raise HTTPException(400, "selfie must be JPEG or PNG")
+
+    # test-mode replay: garment is in the golden bundle -> return the pre-baked buyer
+    # render, no VTO/Claude spend. Selfie is accepted then discarded (privacy contract holds).
+    from src.demo_mode import GOLDEN, _load as _golden_load
+    _pre = GOLDEN / "buyer" / f"{garment_id}.jpg"
+    if _pre.exists():
+        gl = _golden_load().get(garment_id, {})
+        return {"render_url": f"/api/test/buyer/{garment_id}",
+                "garment_title": gl.get("title"), "garment_price": gl.get("price"),
+                "buy_url": BUY_URLS.get(gl.get("platform", "depop"), "https://depop.com"),
+                "platform": gl.get("platform"), "tryon_count": gl.get("comp_count", 0)}
+
+    item = inventory.get(garment_id) if garment_id else None
+    if not item:
+        raise HTTPException(400, "invalid garment_id")
 
     tryon_dir = config.WORK_DIR / "tryon"
     tryon_dir.mkdir(parents=True, exist_ok=True)

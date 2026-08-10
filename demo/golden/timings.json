@@ -1,0 +1,18 @@
+{
+  "parse_s": 7.5,
+  "per_garment": [
+    {
+      "gid": "464a55988eea",
+      "seconds": 158.8
+    },
+    {
+      "gid": "e0f1e87d0c09",
+      "seconds": 127.4
+    },
+    {
+      "gid": "9530539cfa96",
+      "seconds": 135.5
+    }
+  ],
+  "approve_to_live_s": 421.7
+}
