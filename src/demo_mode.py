@@ -1,10 +1,10 @@
-"""Test-mode replay: serve the pre-baked golden bundle so a full seller+buyer demo
+"""Verified replay: serve the pre-baked golden bundle so a full seller+buyer demo
 runs with ZERO API spend, deterministically, every time.
 
 The bundle lives in demo/golden/ (see scripts/bake_golden.py). Routes here mirror the
-real ones under /api/test/* and read only from disk — no gate/parser/vto/comps/copy.
+real ones under /api/replay/* and read only from disk — no gate/parser/vto/comps/copy.
 
-ponytail: separate router, real endpoints untouched. Frontend flips to these when ?test=1.
+ponytail: separate router, real endpoints untouched. Frontend flips to these when ?replay=1.
 """
 
 import json
@@ -17,7 +17,7 @@ from src import config
 
 GOLDEN = config.REPO_ROOT / "demo" / "golden"
 
-router = APIRouter(prefix="/api/test")
+router = APIRouter(prefix="/api/replay")
 
 
 def _load() -> dict:
@@ -41,10 +41,10 @@ def parse_replay():
     """Replay the split: the source photo + the garments it produced (with crop urls)."""
     listings = _load()
     garments = [{"garment_number": i + 1, "garment_id": gid, "type": v.get("type"),
-                 "crop_url": f"/api/test/crop/{gid}"}
+                 "crop_url": f"/api/replay/crop/{gid}"}
                 for i, (gid, v) in enumerate(listings.items())]
     return {"batch_id": "golden", "gate": {"pass": True, "reason": "Demo replay"},
-            "source_url": "/api/test/source", "garments": garments,
+            "source_url": "/api/replay/source", "garments": garments,
             "timings": _timings()}
 
 

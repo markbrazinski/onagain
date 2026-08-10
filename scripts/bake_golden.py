@@ -1,5 +1,5 @@
 """Bake a deterministic 'golden' demo bundle: run the real pipeline ONCE, save every
-artifact + the timings, so test-mode can replay the whole seller+buyer flow with zero
+artifact + the timings, so verified replay can replay the whole seller+buyer flow with zero
 API spend.
 
 Produces demo/golden/:

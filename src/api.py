@@ -22,7 +22,7 @@ from src.utils import inventory
 
 app = FastAPI(title="OnAgain")
 
-from src.demo_mode import router as _demo_router  # test-mode replay (golden bundle)
+from src.demo_mode import router as _demo_router  # verified replay (golden bundle)
 app.include_router(_demo_router)
 
 BATCHES_DIR = config.WORK_DIR / "batches"
@@ -357,13 +357,13 @@ async def tryon(garment_id: str = Form(...), selfie: UploadFile = File(...)):
     if "jpeg" not in ct and "jpg" not in ct and "png" not in ct:
         raise HTTPException(400, "selfie must be JPEG or PNG")
 
-    # test-mode replay: garment is in the golden bundle -> return the pre-baked buyer
+    # verified replay: garment is in the golden bundle -> return the pre-baked buyer
     # render, no VTO/Claude spend. Selfie is accepted then discarded (privacy contract holds).
     from src.demo_mode import GOLDEN, _load as _golden_load
     _pre = GOLDEN / "buyer" / f"{garment_id}.jpg"
     if _pre.exists():
         gl = _golden_load().get(garment_id, {})
-        return {"render_url": f"/api/test/buyer/{garment_id}",
+        return {"render_url": f"/api/replay/buyer/{garment_id}",
                 "garment_title": gl.get("title"), "garment_price": gl.get("price"),
                 "buy_url": BUY_URLS.get(gl.get("platform", "depop"), "https://depop.com"),
                 "platform": gl.get("platform"), "tryon_count": gl.get("comp_count", 0)}

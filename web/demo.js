@@ -1,7 +1,7 @@
-/* Test-mode replay shim. Activated by ?test=1 (or #test).
+/* Verified-replay shim. Activated by ?replay=1 (or #replay).
  *
  * Intercepts window.fetch and answers the seller UI from the pre-baked golden bundle
- * (/api/test/*) instead of the live pipeline — zero API spend, deterministic, and the
+ * (/api/replay/*) instead of the live pipeline — zero API spend, deterministic, and the
  * generate/poll timing respects timings.json so the processing animation feels real.
  *
  * ponytail: a shim over the real UI, not a second UI. The app runs unchanged; only the
@@ -9,13 +9,13 @@
  */
 (function () {
   const params = new URLSearchParams(location.search);
-  if (params.get("test") !== "1" && location.hash !== "#test") return;
+  if (params.get("replay") !== "1" && location.hash !== "#replay") return;
 
   const realFetch = window.fetch.bind(window);
   let LISTINGS = {}, TIMINGS = {}, GIDS = [];
   const ready = (async () => {
-    LISTINGS = await (await realFetch("/api/test/listings")).json().then(d => keyById(d.listings));
-    TIMINGS = await (await realFetch("/api/test/timings")).json();
+    LISTINGS = await (await realFetch("/api/replay/listings")).json().then(d => keyById(d.listings));
+    TIMINGS = await (await realFetch("/api/replay/timings")).json();
     GIDS = Object.keys(LISTINGS);
   })();
 
@@ -30,9 +30,9 @@
       garment_number: i + 1,
       garment_id: gid,
       type: v.type,
-      crop_url: `/api/test/crop/${gid}`,
+      crop_url: `/api/replay/crop/${gid}`,
       identity: { type: v.type, brand: v.brand, color: null, visible_size: v.size, size: v.size },
-      vto: { best_url: `/api/test/render/${gid}`, ranking_reason: "golden render" },
+      vto: { best_url: `/api/replay/render/${gid}`, ranking_reason: "golden render" },
       pricing: {
         suggested_low: v.price_low, suggested_mid: v.price, suggested_high: v.price_high,
         comp_count: v.comp_count, reasoning: `${v.comp_count} comps (demo)`,
@@ -62,10 +62,10 @@
       await sleep((TIMINGS.parse_s || 3) * 1000 / SPEED);
       return json({
         batch_id: "golden", gate: { pass: true, reason: "Demo replay — clean split" },
-        source_url: "/api/test/source",
+        source_url: "/api/replay/source",
         garments: GIDS.map((gid, i) => ({
           garment_number: i + 1, garment_id: gid, type: LISTINGS[gid].type,
-          crop_url: `/api/test/crop/${gid}`,
+          crop_url: `/api/replay/crop/${gid}`,
         })),
       });
     }
@@ -75,7 +75,7 @@
       return json({
         listings: GIDS.map(gid => {
           const v = LISTINGS[gid];
-          return { ...v, hero_photo: `/api/test/render/${gid}`, status: "listed",
+          return { ...v, hero_photo: `/api/replay/render/${gid}`, status: "listed",
                    tryon_count: v.comp_count, created_at: "2026-08-10",
                    buy_url: "https://" + v.platform + ".com" };
         }),
@@ -117,14 +117,14 @@
                             { name: "mannequin-male", url: "/api/base/mannequin-male" }] });
     }
 
-    // everything else (images: /api/test/*, /api/base/*, /tryon page) -> real fetch
+    // everything else (images: /api/replay/*, /api/base/*, /tryon page) -> real fetch
     return realFetch(url, opts);
   };
 
   // banner so it's obvious we're in replay mode
   window.addEventListener("DOMContentLoaded", () => {
     const b = document.createElement("div");
-    b.textContent = "TEST MODE — replaying golden demo (no API calls)";
+    b.textContent = "VERIFIED REPLAY — replaying golden demo (no API calls)";
     b.style.cssText = "position:fixed;bottom:0;left:0;right:0;background:#1A1A1A;color:#F5C518;" +
       "font:600 12px Inter;text-align:center;padding:6px;z-index:9999;letter-spacing:.02em";
     document.body.appendChild(b);
