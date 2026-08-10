@@ -76,7 +76,7 @@ def _ask_text(prompt: str, max_tokens: int = 1000) -> str:
         r.raise_for_status()
         return r.json()["content"][0]["text"]
     import boto3
-    client = boto3.client("bedrock-runtime")
+    client = boto3.client("bedrock-runtime", region_name=config.AWS_REGION)
     resp = client.invoke_model(
         modelId=config.BEDROCK_MODEL,
         body=json.dumps({"anthropic_version": "bedrock-2023-05-31",
@@ -103,18 +103,40 @@ Check eBay, Poshmark, Depop, Mercari. Return ONLY valid JSON (no prose, no markd
 Include 3-6 real comparable prices you found ($3-$500 typical apparel). If truly nothing, return {{"comps": [], "notes": "..."}}."""
 
 
-def _vertex_grounded(item_desc: str) -> Optional[dict]:
-    """Gemini + Google Search grounding via gcloud creds. Returns parsed comps dict, or None.
+def _gcp_token() -> Optional[str]:
+    """Access token for Vertex via google-auth Application Default Credentials.
 
-    ponytail: replaces the DDG scrape + separate extraction — grounding does search
-    AND price-extraction server-side in one call. No CSE/cx, no console needed.
+    Works in a container (GOOGLE_APPLICATION_CREDENTIALS=service-account.json) AND
+    locally (`gcloud auth application-default login`). No gcloud binary needed at
+    runtime — that's why this replaced the old `gcloud print-access-token` subprocess.
+    """
+    global _CREDS
+    try:
+        import google.auth
+        from google.auth.transport.requests import Request as GAuthRequest
+        if _CREDS is None:
+            _CREDS, _ = google.auth.default(
+                scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        if not _CREDS.valid:
+            _CREDS.refresh(GAuthRequest())
+        return _CREDS.token
+    except Exception:
+        return None
+
+
+_CREDS = None  # cached google-auth credentials (module-level, refreshed on expiry)
+
+
+def _vertex_grounded(item_desc: str) -> Optional[dict]:
+    """Gemini + Google Search grounding via ADC. Returns parsed comps dict, or None.
+
+    ponytail: grounding does search AND price-extraction server-side in one call.
+    No CSE/cx, no console needed.
     """
     if not config.GCP_PROJECT:
         return None
     try:
-        import subprocess
-        token = subprocess.run(["gcloud", "auth", "print-access-token"],
-                               capture_output=True, text=True, timeout=15).stdout.strip()
+        token = _gcp_token()
         if not token:
             return None
         url = (f"https://us-central1-aiplatform.googleapis.com/v1/projects/"

@@ -73,7 +73,7 @@ def ask_vision(image_path: Path, prompt: str, cheap: bool = False, max_tokens: i
         return _with_retry(call)
 
     import boto3  # ponytail: lazy import; only needed on the Bedrock path
-    client = boto3.client("bedrock-runtime")
+    client = boto3.client("bedrock-runtime", region_name=config.AWS_REGION)
     def call():
         resp = client.invoke_model(
             modelId=config.BEDROCK_MODEL,

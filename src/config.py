@@ -15,6 +15,16 @@ if _env_path.exists():
             _k, _, _v = _line.partition("=")
             os.environ.setdefault(_k.strip(), _v.strip())
 
+# In a container we can't run `gcloud auth application-default login`. The SA key JSON
+# is passed base64-encoded (App Runner env vars reject raw multi-line values); decode
+# it to a file and point google-auth at it.
+_sa_b64 = os.environ.get("GCP_SA_KEY_B64")
+if _sa_b64 and not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+    import base64
+    _sa_path = Path("/tmp/vertex-sa.json")
+    _sa_path.write_bytes(base64.b64decode(_sa_b64))
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(_sa_path)
+
 YOUCAM_API_KEY = os.environ.get("YOUCAM_API_KEY", "")
 YOUCAM_API_BASE = "https://yce-api-01.makeupar.com/s2s/v2.0"
 
@@ -24,6 +34,10 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 # creds — no key/CSE/console). Falls back to keyless DDG scrape if project unset.
 GCP_PROJECT = os.environ.get("GCP_PROJECT", "preflight-hackathon")
 VERTEX_MODEL = os.environ.get("VERTEX_MODEL", "gemini-2.5-flash")
+
+# Bedrock region — explicit so it works without a configured AWS profile (App Runner
+# instance role has creds but no default region). Local dev's onagain profile sets it too.
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 # Vision model selection: Anthropic API (Sonnet) if key present, else Bedrock Haiku.
 # ponytail: this account's Bedrock access is Haiku-only; bump when Sonnet enabled.

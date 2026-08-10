@@ -20,3 +20,6 @@ Thumbs.db
 .aws/
 cdk.out/
 work/
+
+# GCP service-account key (Vertex) — never commit
+secrets/
