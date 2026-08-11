@@ -219,14 +219,19 @@ function copyListing(n){
   S.copied[n] = true; refreshCard(n);          // patch one card, no full-page flash
   setTimeout(() => { S.copied[n] = false; refreshCard(n); }, 1600);
 }
+async function saveBlob(src, filename){
+  const blob = await (await fetch(src)).blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 async function downloadPhoto(n){
   const g = garment(n);
-  if(!g?.vto?.best_url) return;
   try{
-    const blob = await (await fetch(g.vto.best_url + "?download=1")).blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `onagain_${n}.jpg`; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    // download BOTH: the original garment crop and the mannequin render
+    if(g?.crop_url) await saveBlob(g.crop_url, `onagain_${n}_original.jpg`);
+    if(g?.vto?.best_url) await saveBlob(g.vto.best_url + "?download=1", `onagain_${n}_mannequin.jpg`);
+    if(!g?.crop_url && !g?.vto?.best_url) alert("No photos to download yet.");
   }catch(e){ alert("Download failed: " + e); }
 }
 // resolved size + its source ('tag' | 'profile_default' | null), honoring seller edits
