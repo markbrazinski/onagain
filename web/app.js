@@ -161,8 +161,8 @@ function tryonUrl(n){ return `${tryonBase()}/tryon/${garmentId(n)}`; }
 function tryonLink(g){ return tryonUrl(g.garment_number).replace(/^https?:\/\//,""); }
 function copyTryonLink(n){
   navigator.clipboard.writeText(tryonUrl(n)).catch(()=>{});
-  S.copiedLink[n] = true; render();
-  setTimeout(() => { S.copiedLink[n] = false; render(); }, 1600);
+  S.copiedLink[n] = true; refreshCard(n);       // patch one card, no full-page flash
+  setTimeout(() => { S.copiedLink[n] = false; refreshCard(n); }, 1600);
 }
 
 async function approveListing(n){
@@ -186,7 +186,7 @@ async function approveListing(n){
 
 async function regenImage(n){
   const g = garment(n); if(!g) return;
-  S.busyImg[n] = true; render();
+  S.busyImg[n] = true; refreshCard(n);
   try{
     const d = await (await fetch(`/api/batch/${S.batchId}/garment/${n}/regen_image`, {
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -195,7 +195,7 @@ async function regenImage(n){
     g.vto = d.vto;
     g._rev = (g._rev || 0) + 1;   // cache-bust the <img> so the new render shows
   }catch(err){ alert("Regenerate failed: " + err); }
-  S.busyImg[n] = false; render();
+  S.busyImg[n] = false; refreshCard(n);
 }
 
 function pasteText(g){
@@ -216,8 +216,8 @@ function pasteText(g){
 function copyListing(n){
   const g = garment(n); if(!g) return;
   navigator.clipboard.writeText(pasteText(g)).catch(()=>{});
-  S.copied[n] = true; render();
-  setTimeout(() => { S.copied[n] = false; render(); }, 1600);
+  S.copied[n] = true; refreshCard(n);          // patch one card, no full-page flash
+  setTimeout(() => { S.copied[n] = false; refreshCard(n); }, 1600);
 }
 async function downloadPhoto(n){
   const g = garment(n);
@@ -524,6 +524,7 @@ function rReviewCard(g){
       <div style="font:400 11.5px Inter;color:#4B4B4B;line-height:1.5;white-space:pre-line">${esc(v.description||"")}\n\n👗 Try it on yourself: ${esc(tryonLink(g))}\n\n${esc((v.hashtags||[]).join(" "))}</div>
       ${S.busyCopy[n]?`<div style="position:absolute;inset:0;background:rgba(255,255,255,.74);display:flex;align-items:center;justify-content:center;gap:8px"><span class="spin" style="width:15px;height:15px;border-width:2px"></span><span style="font:500 11px Inter;color:#6B7280">updating copy…</span></div>`:""}
     </div>
+    <div class="microlabel" style="margin:0 0 5px">Buyer try-on link</div>
     <div style="display:flex;align-items:center;gap:8px;background:#FAFAF7;border:1px solid #E5E2DB;border-radius:8px;padding:8px 10px;margin-bottom:12px">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="flex:none"><ellipse cx="12" cy="12" rx="10" ry="6.5" stroke="#6B7280" stroke-width="2.2"/><circle cx="12" cy="12" r="3" fill="#6B7280"/></svg>
       <span style="flex:1;min-width:0;font:11px ui-monospace,monospace;color:#6B7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${tryonLink(g)}</span>
