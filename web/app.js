@@ -348,6 +348,9 @@ function rUpload(){
         <div>
           <div style="font-size:12px;font-weight:500;color:#6B7280;margin-bottom:8px">Render garments as</div>
           <div style="display:flex;gap:12px;max-width:360px">${baseCards}</div>
+          <div style="font-size:10px;color:#9CA3AF;margin-top:8px;max-width:360px;line-height:1.4">
+            Mannequin base: photo by <a href="https://commons.wikimedia.org/wiki/User:Gerd_Eichmann" target="_blank" rel="noopener" style="color:#9CA3AF;text-decoration:underline">Gerd Eichmann</a>,
+            <a href="https://creativecommons.org/licenses/by-sa/4.0" target="_blank" rel="noopener" style="color:#9CA3AF;text-decoration:underline">CC BY-SA 4.0</a>, cropped.</div>
         </div>
       </div>
       <button class="btn btn-lg" onclick="generate()">Generate ${S.garments.length} listings →</button>
