@@ -73,7 +73,7 @@ async function generate(){
   });
   S.screen = "processing";
   await poll();                                   // seed S.status before first paint
-  pollTimer = setInterval(poll, 2000);
+  pollTimer = setInterval(poll, 700);             // tight poll so step updates + done feel live
 }
 
 async function poll(){
@@ -114,9 +114,17 @@ function priceOf(g){
   return m ? `$${m}` : "—";
 }
 
+// update ONLY one review card's DOM — avoids the full-screen flash on copy/platform change
+function refreshCard(n){
+  const el = document.getElementById(`rcard-${n}`);
+  const g = garment(n);
+  if(el && g){ el.innerHTML = rReviewCard(g); }
+  else { render(); }   // fallback if the card isn't mounted (e.g. not on review screen)
+}
+
 async function regenCopy(n){
   const g = garment(n); if(!g) return;
-  S.busyCopy[n] = true; render();
+  S.busyCopy[n] = true; refreshCard(n);
   const e = edits(n);
   const facts = {};
   ["brand","color","material_estimate","condition_estimate","visible_size"].forEach(k => { if(e[k] !== undefined) facts[k] = e[k]; });
@@ -128,7 +136,7 @@ async function regenCopy(n){
     })).json();
     g.copy = d.copy; g.identity = d.identity;
   }catch(err){ console.error(err); }
-  S.busyCopy[n] = false; render();
+  S.busyCopy[n] = false; refreshCard(n);
 }
 
 function factEdit(n, key, value){
@@ -136,7 +144,7 @@ function factEdit(n, key, value){
   clearTimeout(factEdit._t?.[n]); (factEdit._t = factEdit._t || {})[n] = setTimeout(() => regenCopy(n), 900);
 }
 function setPlatform(n, p){ S.platform[n] = p; regenCopy(n); }
-function setCopyMode(n, m){ S.copyMode[n] = m; render(); }
+function setCopyMode(n, m){ S.copyMode[n] = m; refreshCard(n); }
 
 function baseLabel(b){ return {"mannequin":"female mannequin","mannequin-male":"male mannequin","model":"model photo"}[b] || b; }
 function garmentId(n){ const g = garment(n); return (g && g.garment_id) || `${S.batchId}_${n}`; }
@@ -421,7 +429,7 @@ function rProcessing(){
 function rReview(){
   const gs = S.status?.garments || [];
   const approvedCount = Object.values(S.approved).filter(Boolean).length;
-  const cards = gs.map(g => rReviewCard(g)).join("");
+  const cards = gs.map(g => `<div id="rcard-${g.garment_number}">${rReviewCard(g)}</div>`).join("");
   return `<div class="fade">
     <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:20px">
       <div><h1>Review listings</h1><p class="sub">${approvedCount} of ${gs.length} approved · add sizes, then list</p></div>

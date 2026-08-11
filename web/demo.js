@@ -55,7 +55,7 @@
   }
 
   // pace generate/poll to the recorded per-garment durations, but compressed for demo sanity
-  const SPEED = 12;                       // replay 12x faster than real bake (7min -> ~35s)
+  const SPEED = 18;                       // replay compression: ~10s of processing animation
   let genStartedAt = 0;
 
   window.fetch = async function (url, opts) {
@@ -104,37 +104,37 @@
     // real ThreadPoolExecutor), each stepping identify->vto->price->copy on recorded times.
     if (/\/api\/batch\/golden$/.test(path)) {
       const elapsed = (Date.now() - genStartedAt) / 1000 * SPEED;   // real-equivalent seconds
-      const CONCURRENCY = 2;                                        // matches _run_batch
       const per = TIMINGS.per_garment || [];
-      // when does each garment START? lane model: 2 lanes, next garment starts when a lane frees
+      const STEP_ORDER = ["identify", "vto", "price", "copy"];
+      // per-garment duration = SUM of its clean step times (NOT t.seconds, which can be
+      // inflated by a mid-bake stall). Lane model: 2 lanes, next garment starts on a free lane.
+      const dur = t => STEP_ORDER.reduce((s, k) => s + ((t.steps || {})[k] || 0), 0);
       const laneFree = [0, 0];
       const startAt = per.map(t => {
         const lane = laneFree[0] <= laneFree[1] ? 0 : 1;
         const s = laneFree[lane];
-        laneFree[lane] = s + (t.seconds || 0);
+        laneFree[lane] = s + dur(t);
         return s;
       });
-      const STEP_ORDER = ["identify", "vto", "price", "copy"];
       const garments = GIDS.map((gid, i) => {
         const g = garmentShape(gid, i);
-        const t = per[i] || {};
-        const steps = t.steps || {};
+        const steps = (per[i] || {}).steps || {};
         const local = elapsed - (startAt[i] || 0);                 // seconds into THIS garment
         const progress = {};
         let cursor = 0, allDone = true;
         for (const k of STEP_ORDER) {
-          const dur = steps[k] || 0;
+          const d = steps[k] || 0;
           if (local <= cursor) { progress[k] = "wait"; allDone = false; }
-          else if (local < cursor + dur) { progress[k] = "active"; allDone = false; }
+          else if (local < cursor + d) { progress[k] = "active"; allDone = false; }
           else { progress[k] = "done"; }
-          cursor += dur;
+          cursor += d;
         }
         if (local <= 0) STEP_ORDER.forEach(k => progress[k] = "wait");  // not started yet
         g.progress = progress;
         if (!allDone) { g.vto = null; g.pricing = null; g.copy = null; }  // reveal data only when done
         return g;
       });
-      const total = Math.max(...startAt.map((s, i) => s + (per[i]?.seconds || 0)), 0);
+      const total = Math.max(...startAt.map((s, i) => s + dur(per[i])), 0);
       return json({ batch_id: "golden", status: elapsed >= total ? "done" : "processing", garments });
     }
 

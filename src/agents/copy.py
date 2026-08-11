@@ -9,19 +9,23 @@ import json
 from src.agents.comps import _ask_text  # ponytail: reuse the one text-Claude helper
 
 PLATFORM_RULES = {
-    "poshmark": """POSHMARK:
+    "poshmark": """POSHMARK — warm, casual, detailed (the friendliest of the three):
 - Title: 80 chars max. First 22 chars visible on mobile. Lead with brand.
-- Description: Detailed. Include fabric, condition, styling tips. Mention retail price if known.
-- End with style tags as hashtags.
-- Flag NWT prominently if condition is new with tags.""",
-    "depop": """DEPOP:
-- Title: Casual, keyword-rich but not stuffed.
-- Description: Conversational tone, like texting a friend ("these go hard with literally any jeans").
-- 5-10 hashtags at end including aesthetic tags (#y2k, #vintage, #streetwear, #cottagecore).
-- Gen Z audience — authentic, not corporate.""",
-    "ebay": """EBAY:
+- Description: LONGEST of the three (4-6 short paragraphs). Conversational and inviting —
+  describe the vibe, fabric feel, styling ideas, and condition warmly. It should read like
+  a stylish friend recommending the piece. Mention retail price if known. Flag NWT prominently.
+- End with style hashtags.""",
+    "depop": """DEPOP — short, punchy, FUN (Gen Z, playful):
+- Title: casual, a little playful.
+- Description: SHORTEST of the three — 2-3 snappy lines max. Fun, high-energy, like texting a
+  friend ("this cardigan? obsessed. goes with literally everything 🌿"). Emojis welcome. Get in,
+  hype it, get out. No corporate tone, no long condition paragraphs.
+- 6-10 aesthetic hashtags (#y2k, #vintage, #cottagecore, #thrifted).""",
+    "ebay": """EBAY — terse, factual, TO THE POINT (no fluff):
 - Title: 80 chars, keyword-dense. Brand + Type + Details + Size + Condition.
-- Description: Scannable. Short paragraphs. Bold labels. No keyword stuffing in description.
+- Description: SHORT and dry. Bullet-style facts only — material, size, measurements, condition,
+  flaws. NO styling talk, NO vibe, NO hype, NO emojis. A buyer scanning specs should get every
+  fact in seconds. Plain and transactional.
 - Include item specifics as structured fields (Brand, Style, Size, Color, Material, Department, Condition).""",
     "vinted": """VINTED:
 - Title: Brand + Type + Key Detail + Size.
