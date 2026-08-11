@@ -18,26 +18,9 @@ from src import config
 MAX_SEARCHES = 2
 
 
-def _google_search(query: str) -> str:
-    """Google Programmable Search — real titles+snippets. Empty string if unkeyed/errors."""
-    if not (config.GOOGLE_API_KEY and config.GOOGLE_CSE_ID):
-        return ""
-    try:
-        r = requests.get(
-            "https://www.googleapis.com/customsearch/v1",
-            params={"key": config.GOOGLE_API_KEY, "cx": config.GOOGLE_CSE_ID,
-                    "q": query, "num": 10},
-            timeout=15,
-        )
-        r.raise_for_status()
-        items = r.json().get("items", [])
-        return " ".join(f"{i.get('title','')} — {i.get('snippet','')}" for i in items)[:8000]
-    except Exception:
-        return ""
-
-
-def _ddg_search(query: str) -> str:
-    """DDG HTML fallback (no key). Best-effort; DDG rate-limits headless hits."""
+def _web_search(query: str) -> str:
+    """DDG HTML fallback (no key) — only used if Vertex grounding is unavailable.
+    Best-effort; DDG rate-limits headless hits. Primary path is _vertex_grounded()."""
     try:
         r = requests.post(
             "https://html.duckduckgo.com/html/",
@@ -53,11 +36,6 @@ def _ddg_search(query: str) -> str:
         return text[:8000]
     except Exception:
         return ""
-
-
-def _web_search(query: str) -> str:
-    """Google first (keyed, reliable), DDG fallback (keyless, flaky)."""
-    return _google_search(query) or _ddg_search(query)
 
 
 def _ask_text(prompt: str, max_tokens: int = 1000) -> str:

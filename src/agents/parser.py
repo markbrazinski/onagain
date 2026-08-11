@@ -32,6 +32,42 @@ garment including sleeves and hems. Each physical garment appears exactly once. 
 Do not include non-garment items (luggage, accessories, shoes, bedding)."""
 
 
+def _dedupe_boxes(garments: list) -> list:
+    """Drop boxes that are duplicate detections of one garment: high overlap with, or
+    mostly contained inside, another box. Keeps the larger (more complete) box.
+
+    ponytail: the vision model sometimes returns one garment twice (a full box + a
+    partial slice). Without this, a 3-garment photo yields 4 listings. IoU / containment
+    on the percentage boxes, no deps."""
+    def area(b): return max(0, b[2] - b[0]) * max(0, b[3] - b[1])
+    def overlap(a, b):
+        ix = max(0, min(a[2], b[2]) - max(a[0], b[0]))
+        iy = max(0, min(a[3], b[3]) - max(a[1], b[1]))
+        return ix * iy
+    boxed = [g for g in garments if g.get("bounding_box") and len(g["bounding_box"]) == 4]
+    boxed.sort(key=lambda g: area(g["bounding_box"]), reverse=True)  # largest first = winners
+    kept = []
+    for g in boxed:
+        b, dup = g["bounding_box"], False
+        for k in kept:
+            inter = overlap(b, k["bounding_box"])
+            if not inter:
+                continue
+            # duplicate if >55% of THIS box overlaps a kept (larger) box, or IoU high
+            union = area(b) + area(k["bounding_box"]) - inter
+            if inter / max(1, area(b)) > 0.55 or inter / max(1, union) > 0.5:
+                dup = True
+                break
+        if not dup:
+            kept.append(g)
+    # keep any boxless entries too (they get crop_path=None downstream), renumber 1..n
+    others = [g for g in garments if g not in boxed]
+    out = kept + others
+    for i, g in enumerate(out, 1):
+        g["garment_number"] = i
+    return out
+
+
 def parse_garments(image_path: Path, work_dir: Path = None) -> list:
     image_path = Path(image_path)
     work_dir = Path(work_dir) if work_dir else config.WORK_DIR / "crops"
@@ -47,6 +83,7 @@ def parse_garments(image_path: Path, work_dir: Path = None) -> list:
     im.resize((ask_w, ask_h)).convert("RGB").save(ask_path, quality=90)
 
     garments = ask_vision_json(ask_path, PROMPT)
+    garments = _dedupe_boxes(garments)   # drop duplicate/contained detections of one garment
 
     results = []
     for g in garments:

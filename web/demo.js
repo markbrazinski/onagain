@@ -12,10 +12,12 @@
   if (params.get("replay") !== "1" && location.hash !== "#replay") return;
 
   const realFetch = window.fetch.bind(window);
-  let LISTINGS = {}, TIMINGS = {}, GIDS = [];
+  let LISTINGS = {}, TIMINGS = {}, GIDS = [], STARTER = null;
+  const APPROVED = new Set();        // gids that have hit the save/approve action this session
   const ready = (async () => {
     LISTINGS = await (await realFetch("/api/replay/listings")).json().then(d => keyById(d.listings));
     TIMINGS = await (await realFetch("/api/replay/timings")).json();
+    STARTER = await (await realFetch("/api/replay/starter")).json();
     GIDS = Object.keys(LISTINGS);
   })();
 
@@ -23,9 +25,13 @@
   const json = (obj) => new Response(JSON.stringify(obj), { headers: { "Content-Type": "application/json" } });
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-  // golden listing -> the garment shape app.js's review screen renders
-  function garmentShape(gid, i) {
+  // golden listing -> the garment shape app.js's review screen renders.
+  // platform (optional) selects the baked per-platform copy so the swap shows real copy.
+  function garmentShape(gid, i, platform) {
     const v = LISTINGS[gid];
+    const plat = platform || v.platform;
+    const c = (v.copy_by_platform && v.copy_by_platform[plat]) ||
+              { title: v.title, description: v.description, hashtags: v.hashtags };
     return {
       garment_number: i + 1,
       garment_id: gid,
@@ -37,11 +43,11 @@
         suggested_low: v.price_low, suggested_mid: v.price, suggested_high: v.price_high,
         comp_count: v.comp_count, reasoning: `${v.comp_count} comps (demo)`,
       },
-      channel: { primary: v.platform, primary_reasoning: "Demo channel" },
+      channel: { primary: plat, primary_reasoning: "Demo channel" },
       copy: {
         variants: [
-          { style: "keyword", title: v.title, description: v.description, hashtags: v.hashtags },
-          { style: "lifestyle", title: v.title, description: v.description, hashtags: v.hashtags },
+          { style: "keyword", title: c.title, description: c.description, hashtags: c.hashtags },
+          { style: "lifestyle", title: c.title, description: c.description, hashtags: c.hashtags },
         ],
         flags: {},
       },
@@ -70,16 +76,20 @@
       });
     }
 
-    // inventory -> baked listings (adds buy_url + hero url the inventory cards want)
+    // inventory -> the one starter listing, PLUS any golden garments already approved
+    // this session. New garments populate only on their save/approve action.
     if (path === "/api/inventory") {
-      return json({
-        listings: GIDS.map(gid => {
-          const v = LISTINGS[gid];
-          return { ...v, hero_photo: `/api/replay/render/${gid}`, status: "listed",
-                   tryon_count: v.comp_count, created_at: "2026-08-10",
-                   buy_url: "https://" + v.platform + ".com" };
-        }),
+      const out = [];
+      if (STARTER && STARTER.garment_id) {
+        out.push({ ...STARTER, hero_photo: "/api/replay/starter-hero", status: "listed" });
+      }
+      GIDS.filter(gid => APPROVED.has(gid)).forEach(gid => {
+        const v = LISTINGS[gid];
+        out.push({ ...v, hero_photo: `/api/replay/render/${gid}`, status: "listed",
+                   tryon_count: 0, created_at: "2026-08-10",
+                   buy_url: "https://" + v.platform + ".com" });
       });
+      return json({ listings: out });
     }
 
     // generate -> just acknowledge; poll drives the timed reveal
@@ -88,24 +98,53 @@
       return json({ status: "started", base: "mannequin" });
     }
 
-    // batch poll -> reveal garments progressively per recorded timings, then mark done
+    // batch poll -> replay the REAL per-step progression. Garments run 2-wide (like the
+    // real ThreadPoolExecutor), each stepping identify->vto->price->copy on recorded times.
     if (/\/api\/batch\/golden$/.test(path)) {
       const elapsed = (Date.now() - genStartedAt) / 1000 * SPEED;   // real-equivalent seconds
-      let acc = 0, doneCount = 0;
-      (TIMINGS.per_garment || []).forEach(t => { acc += t.seconds; if (elapsed >= acc) doneCount++; });
+      const CONCURRENCY = 2;                                        // matches _run_batch
+      const per = TIMINGS.per_garment || [];
+      // when does each garment START? lane model: 2 lanes, next garment starts when a lane frees
+      const laneFree = [0, 0];
+      const startAt = per.map(t => {
+        const lane = laneFree[0] <= laneFree[1] ? 0 : 1;
+        const s = laneFree[lane];
+        laneFree[lane] = s + (t.seconds || 0);
+        return s;
+      });
+      const STEP_ORDER = ["identify", "vto", "price", "copy"];
       const garments = GIDS.map((gid, i) => {
         const g = garmentShape(gid, i);
-        if (i >= doneCount) { g.vto = null; g.pricing = null; g.copy = null; }  // not "done" yet
+        const t = per[i] || {};
+        const steps = t.steps || {};
+        const local = elapsed - (startAt[i] || 0);                 // seconds into THIS garment
+        const progress = {};
+        let cursor = 0, allDone = true;
+        for (const k of STEP_ORDER) {
+          const dur = steps[k] || 0;
+          if (local <= cursor) { progress[k] = "wait"; allDone = false; }
+          else if (local < cursor + dur) { progress[k] = "active"; allDone = false; }
+          else { progress[k] = "done"; }
+          cursor += dur;
+        }
+        if (local <= 0) STEP_ORDER.forEach(k => progress[k] = "wait");  // not started yet
+        g.progress = progress;
+        if (!allDone) { g.vto = null; g.pricing = null; g.copy = null; }  // reveal data only when done
         return g;
       });
-      const total = (TIMINGS.per_garment || []).reduce((s, t) => s + t.seconds, 0);
+      const total = Math.max(...startAt.map((s, i) => s + (per[i]?.seconds || 0)), 0);
       return json({ batch_id: "golden", status: elapsed >= total ? "done" : "processing", garments });
     }
 
-    // approve/regen -> no-op success in demo (nothing to persist; links already stable)
-    if (/\/api\/batch\/golden\/garment\/\d+\/(approve|regen_copy|regen_image)$/.test(path)) {
-      const m = path.match(/garment\/(\d+)\//);
-      const g = garmentShape(GIDS[Number(m[1]) - 1], Number(m[1]) - 1);
+    // approve/regen -> success in demo (nothing to persist; links already stable).
+    // regen_copy carries the chosen platform -> return that platform's baked copy.
+    // On approve ONLY, mark the garment so it appears in inventory (populate-on-save).
+    const gm = path.match(/\/api\/batch\/golden\/garment\/(\d+)\/(approve|regen_copy|regen_image)$/);
+    if (gm) {
+      let platform;
+      try { platform = opts?.body && JSON.parse(opts.body).platform; } catch (e) {}
+      const g = garmentShape(GIDS[Number(gm[1]) - 1], Number(gm[1]) - 1, platform);
+      if (gm[2] === "approve") APPROVED.add(g.garment_id);
       return json({ status: "listed", garment_id: g.garment_id, tryon_url: `/tryon/${g.garment_id}`,
                     copy: g.copy, identity: g.identity, channel: g.channel,
                     vto: { best_url: g.vto.best_url, ranking_reason: g.vto.ranking_reason } });

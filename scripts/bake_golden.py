@@ -46,7 +46,7 @@ def _best_of(crop: Path, base: Path, out_dir: Path, gtype: str, n: int) -> dict:
     return vto.render_garment(crop, base, out_dir, gtype, n_renders=n)
 
 
-def bake(photo: Path, person: Path):
+def bake(photo: Path, person: Path, parts: list = None):
     GOLDEN.mkdir(parents=True, exist_ok=True)
     for sub in ("crops", "renders", "buyer"):
         (GOLDEN / sub).mkdir(parents=True, exist_ok=True)
@@ -57,10 +57,21 @@ def bake(photo: Path, person: Path):
     print("[gate] ...")
     g = gate.check(photo)
     assert g["pass"], f"gate rejected: {g['reason']}"
-    print("[parse] ...")
-    t0 = time.time()
-    garments = [gm for gm in parser.parse_garments(photo) if gm.get("crop_path")]
-    timings["parse_s"] = round(time.time() - t0, 1)
+    if parts:
+        # deterministic bundle: pre-cropped single-garment images, skip the parser lottery.
+        # Time the (still-real) parse of the full photo so the split animation is honest,
+        # but use the hand-cropped parts as the actual garments.
+        print(f"[parse] using {len(parts)} pre-cropped parts (parser timed for animation)")
+        t0 = time.time()
+        _ = parser.parse_garments(photo)     # real parse, timed — result discarded
+        timings["parse_s"] = round(time.time() - t0, 1)
+        garments = [{"garment_number": i + 1, "type": "auto", "crop_path": str(p)}
+                    for i, p in enumerate(parts)]
+    else:
+        print("[parse] ...")
+        t0 = time.time()
+        garments = [gm for gm in parser.parse_garments(photo) if gm.get("crop_path")]
+        timings["parse_s"] = round(time.time() - t0, 1)
     print(f"  {len(garments)} garments in {timings['parse_s']}s")
 
     listings = {}
@@ -71,23 +82,42 @@ def bake(photo: Path, person: Path):
         gid = gid_for(crop_src)                      # STABLE id
         shutil.copy(crop_src, GOLDEN / "crops" / f"{gid}.jpg")
         gt0 = time.time()
+        steps = {}                                   # per-step wall-clock (drives the 3 circles)
 
         # ID
+        _s = time.time()
         ident = identifier.identify(crop_src)
         gtype = ident.get("type", gm.get("type", "auto"))
+        steps["identify"] = round(time.time() - _s, 1)
 
         # Seller render: best-of-3 on the mannequin
         print(f"[render {gid}] {gtype} best-of-{GEN_RENDERS} ...")
+        _s = time.time()
         res = _best_of(crop_src, MANNEQUIN, config.WORK_DIR / "renders", gtype, GEN_RENDERS)
+        steps["vto"] = round(time.time() - _s, 1)
         if not res.get("best"):
             print(f"  ! render failed ({res.get('ranking_reason')}) — skipping {gid}")
             continue
         shutil.copy(res["best"], GOLDEN / "renders" / f"{gid}.jpg")
 
         # Comps + channel + copy
+        _s = time.time()
         cm = comps.research(ident)
+        steps["price"] = round(time.time() - _s, 1)
         ch = channel.recommend(ident, cm)
-        cp = copy_agent.generate(ident, cm, ch["primary"])
+        primary = ch.get("primary", "depop")
+        # Bake copy for the primary + the common alternates so the platform-swap in replay
+        # shows real, differently-voiced copy (not a static string).
+        plats = list(dict.fromkeys([primary, "poshmark", "depop", "ebay"]))
+        _s = time.time()
+        copy_by_platform = {}
+        for p in plats:
+            try:
+                copy_by_platform[p] = copy_agent.generate(ident, cm, p)
+            except Exception as e:
+                print(f"  ! copy failed for {p}: {e}")
+        steps["copy"] = round(time.time() - _s, 1)
+        cp = copy_by_platform.get(primary) or next(iter(copy_by_platform.values()), {"variants": []})
         variants = cp.get("variants", [])
         v0 = variants[0] if variants else {}
 
@@ -116,10 +146,18 @@ def bake(photo: Path, person: Path):
             "hero": f"renders/{gid}.jpg",
             "buyer": f"buyer/{gid}.jpg" if bres.get("best") else None,
             "tryon": f"/tryon/{gid}",
+            # copy variants per platform -> {platform: {title, description, hashtags}} so the
+            # replay's platform swap regenerates real, differently-voiced copy.
+            "copy_by_platform": {
+                p: {"title": (c.get("variants") or [{}])[0].get("title", ""),
+                    "description": (c.get("variants") or [{}])[0].get("description", ""),
+                    "hashtags": (c.get("variants") or [{}])[0].get("hashtags", [])}
+                for p, c in copy_by_platform.items()
+            },
         }
         secs = round(time.time() - gt0, 1)
-        timings["per_garment"].append({"gid": gid, "seconds": secs})
-        print(f"  done {gid} in {secs}s -> ${listings[gid]['price']} on {listings[gid]['platform']}")
+        timings["per_garment"].append({"gid": gid, "seconds": secs, "steps": steps})
+        print(f"  done {gid} in {secs}s (steps {steps}) -> ${listings[gid]['price']}")
 
     # approval -> live sequence timing (sum of per-garment, for the posting animation)
     timings["approve_to_live_s"] = round(sum(x["seconds"] for x in timings["per_garment"]), 1)
@@ -136,6 +174,12 @@ if __name__ == "__main__":
     photo = Path(args[0]) if args else config.REPO_ROOT / "smoke-test/inputs/image-8.jpg"
     person = (Path(sys.argv[sys.argv.index("--person") + 1]) if "--person" in sys.argv
               else config.REPO_ROOT / "smoke-test/inputs/buyer.jpg")
+    # --parts <dir>: deterministic bundle from pre-cropped single-garment images in <dir>
+    parts = None
+    if "--parts" in sys.argv:
+        pdir = Path(sys.argv[sys.argv.index("--parts") + 1])
+        parts = sorted(pdir.glob("*.jpg"))
+        assert parts, f"no *.jpg in {pdir}"
     assert photo.exists(), f"photo not found: {photo}"
     assert person.exists(), f"stock person not found: {person} (pass --person <path>)"
-    bake(photo, person)
+    bake(photo, person, parts=parts)

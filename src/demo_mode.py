@@ -54,6 +54,21 @@ def listings():
     return {"listings": list(_load().values())}
 
 
+@router.get("/starter")
+def starter():
+    """The one pre-existing inventory listing shown on first load (img3 dress, ~4 try-ons)."""
+    f = GOLDEN / "starter.json"
+    return json.loads(f.read_text()) if f.exists() else {}
+
+
+@router.get("/starter-hero")
+def starter_hero():
+    p = GOLDEN / "starter.jpg"
+    if not p.exists():
+        raise HTTPException(404, "no starter hero")
+    return FileResponse(p)
+
+
 @router.get("/listing/{gid}")
 def listing(gid: str):
     item = _load().get(gid)
