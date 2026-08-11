@@ -109,8 +109,8 @@ function garment(n){ return (S.status?.garments || []).find(g => g.garment_numbe
 function edits(n){ return S.edits[n] || (S.edits[n] = {}); }
 function currentPlatform(g){ return S.platform[g.garment_number] || (g.channel?.primary || "ebay"); }
 function currentVariant(g){
-  const mode = S.copyMode[g.garment_number] || "keyword";
-  const v = (g.copy?.variants || []).find(x => x.style === mode);
+  // one copy per listing — the keyword variant (search-optimized), no style toggle
+  const v = (g.copy?.variants || []).find(x => x.style === "keyword");
   return v || (g.copy?.variants || [])[0] || { title:"", description:"", hashtags:[] };
 }
 function displayTitle(g){
@@ -153,7 +153,6 @@ function factEdit(n, key, value){
   clearTimeout(factEdit._t?.[n]); (factEdit._t = factEdit._t || {})[n] = setTimeout(() => regenCopy(n), 900);
 }
 function setPlatform(n, p){ S.platform[n] = p; regenCopy(n); }
-function setCopyMode(n, m){ S.copyMode[n] = m; refreshCard(n); }
 
 function baseLabel(b){ return {"mannequin":"female mannequin","mannequin-male":"male mannequin","model":"model photo"}[b] || b; }
 function garmentId(n){ const g = garment(n); return (g && g.garment_id) || `${S.batchId}_${n}`; }
@@ -473,7 +472,6 @@ function rReviewCard(g){
   const id = g.identity || {}, e = edits(n);
   const v = currentVariant(g);
   const plat = currentPlatform(g);
-  const kw = (S.copyMode[n] || "keyword") === "keyword";
   const flags = flagsOf(g).map(f => `<span class="flag">⚠ ${f}</span>`).join("");
   const sz = sizeOf(g);
   const size = sz.size;
@@ -515,11 +513,6 @@ function rReviewCard(g){
       </select>
       ${g.channel?.primary ? `<div style="font:400 10px Inter;color:#9CA3AF;margin-top:6px">Sellers often list items like this on ${esc(g.channel.primary[0].toUpperCase()+g.channel.primary.slice(1))}</div>` : ""}
     </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <span class="microlabel" style="margin:0">Copy style</span>
-      <div style="display:inline-flex;background:#FAFAF7;border:1px solid #E5E2DB;border-radius:9999px;padding:2px">
-        <span style="background:${kw?"#C4654A":"transparent"};color:${kw?"#fff":"#6B7280"};font:500 10px Inter;padding:3px 10px;border-radius:9999px;cursor:pointer" onclick="setCopyMode(${n},'keyword')">Keyword</span>
-        <span style="background:${kw?"transparent":"#C4654A"};color:${kw?"#6B7280":"#fff"};font:500 10px Inter;padding:3px 10px;border-radius:9999px;cursor:pointer" onclick="setCopyMode(${n},'lifestyle')">Lifestyle</span></div></div>
     <div style="position:relative;overflow:hidden;background:#fff;border:1px solid #E5E2DB;border-radius:8px;padding:11px;margin-bottom:10px">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
         <span style="font:600 9px Inter;color:#9CA3AF;text-transform:uppercase;letter-spacing:.06em">Listing preview · ${esc(plat)} · plain text</span>
