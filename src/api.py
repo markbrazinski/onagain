@@ -182,6 +182,11 @@ def batch_status(batch_id: str):
             entry["pricing"] = {k: gm["comps"].get(k) for k in
                                 ("suggested_low", "suggested_mid", "suggested_high",
                                  "comp_count", "reasoning")}
+            # forward the individual comps (source/title/price) so the UI can show them
+            entry["pricing"]["comps"] = [
+                {"source": c.get("source"), "title": c.get("title"), "price": c.get("sold_price")}
+                for c in (gm["comps"].get("comps") or [])
+            ]
         if gm.get("channel"):
             entry["channel"] = gm["channel"]
         if gm.get("copy"):

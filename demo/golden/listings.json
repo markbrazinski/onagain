@@ -64,7 +64,39 @@
       "top": 18,
       "width": 42,
       "height": 34
-    }
+    },
+    "comps": [
+      {
+        "source": "Mercari",
+        "title": "Women's Small Key West Long Sleeve T Shirt Neon Green And White",
+        "price": 3.0
+      },
+      {
+        "source": "Mercari",
+        "title": "Women's Poison Black Kanji Rose Tokyo Graphic Long Sleeve T-Shirts",
+        "price": 5.0
+      },
+      {
+        "source": "Mercari",
+        "title": "Long sleeve tie dye shirt",
+        "price": 5.87
+      },
+      {
+        "source": "Mercari",
+        "title": "AVALON Long Sleeve Double Sided Green Gray T-Shirt Brand Large EUC",
+        "price": 11.03
+      },
+      {
+        "source": "Mercari",
+        "title": "Floral tunic top - Knox Rose",
+        "price": 11.25
+      },
+      {
+        "source": "Mercari",
+        "title": "Jaded Gypsy top jadedgypsy tunic tee crocheted lace long sleeve soft stretchy SM",
+        "price": 49.0
+      }
+    ]
   },
   "1fd798479320": {
     "garment_id": "1fd798479320",
@@ -139,7 +171,39 @@
       "top": 55,
       "width": 54,
       "height": 37
-    }
+    },
+    "comps": [
+      {
+        "source": "eBay",
+        "title": "Serengeti L Lavender Open Knit Mesh Cardigan Sweater",
+        "price": 22.99
+      },
+      {
+        "source": "eBay",
+        "title": "Chico's 2 Black Knit V-Neck Fringe Full Zip 3/4 Sleeve Cardigan Sweater US L 12",
+        "price": 42.0
+      },
+      {
+        "source": "eBay",
+        "title": "St. John's Bay Womens Striped Knit Button-Front Crew Neck Cardigan Sweater L",
+        "price": 15.99
+      },
+      {
+        "source": "Mercari",
+        "title": "American Flag Waterfall Cardigan Stars Stripes Lightweight Knit Open Front 0X L",
+        "price": 37.95
+      },
+      {
+        "source": "Mercari",
+        "title": "Neon yellow summer cardigan sweater women's size medium/large - Lilly Pulitzer",
+        "price": 14.5
+      },
+      {
+        "source": "Mercari",
+        "title": "Women's Cardigan White 100% Linen Knit Open Front light Women's L - Nanette Lepore",
+        "price": 11.0
+      }
+    ]
   },
   "bde595ecfa26": {
     "garment_id": "bde595ecfa26",
@@ -209,6 +273,38 @@
       "top": 18,
       "width": 57,
       "height": 48
-    }
+    },
+    "comps": [
+      {
+        "source": "eBay",
+        "title": "White House Black Market Black Size 12 Maxi Sleeveless Dress. Pre-Owned",
+        "price": 35.99
+      },
+      {
+        "source": "Poshmark",
+        "title": "USED Timeless Dress. Size: 12",
+        "price": 26.0
+      },
+      {
+        "source": "Poshmark",
+        "title": "B-WORKS Size 12 Dress Used",
+        "price": 10.0
+      },
+      {
+        "source": "Mercari",
+        "title": "Women's Nicole Dress, Wild Rose, Size 12 - Jenny Yoo. SOLD",
+        "price": 8.85
+      },
+      {
+        "source": "Mercari",
+        "title": "Enfocus Studio Women's Maxi Dress Size 12 Sleeveless Navy Blue Chevron Pattern",
+        "price": 15.0
+      },
+      {
+        "source": "Mercari",
+        "title": "Dress - 12th Tribe. SOLD",
+        "price": 40.0
+      }
+    ]
   }
 }

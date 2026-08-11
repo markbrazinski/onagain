@@ -116,6 +116,17 @@ function currentVariant(g){
 function displayTitle(g){
   return edits(g.garment_number).title ?? currentVariant(g).title ?? (g.identity?.type || "Garment");
 }
+// "N comps" badge with a hover popover listing each comparable (source · title · price)
+function compsBadge(g){
+  const n = g.pricing?.comp_count || 0;
+  const comps = g.pricing?.comps || [];
+  if(!n) return `<span style="font-size:11px;color:#9CA3AF">no comp data</span>`;
+  const rows = comps.length
+    ? comps.map(c => `<div class="comps-row"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.title||"comparable")}</span><span class="comps-src">${esc(c.source||"")}</span><b>$${esc(c.price)}</b></div>`).join("")
+    : `<div class="comps-row" style="color:#9CA3AF">sourced via Google Search + Vertex AI</div>`;
+  return `<span class="comps" style="font-size:11px;color:#C4654A;font-weight:500">${n} comps
+    <span class="comps-pop"><div class="microlabel" style="margin-bottom:4px">Comparable sold listings</div>${rows}</span></span>`;
+}
 function priceOf(g){
   const e = edits(g.garment_number);
   if(e.price) return e.price;
@@ -492,7 +503,7 @@ function rReviewCard(g){
     <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:12px">
       <input value="${esc(priceOf(g))}" onchange="edits(${n}).price=this.value" style="width:58px;background:transparent;border:none;border-bottom:1px dashed #C4654A;font:500 16px Inter;padding:0 0 1px">
       <span style="font-size:11px;color:#9CA3AF">${g.pricing?.suggested_low?`$${g.pricing.suggested_low}–${g.pricing.suggested_high}`:"no comp data"}</span>
-      <span style="font-size:11px;color:#C4654A;font-weight:500">${g.pricing?.comp_count||0} comps</span></div>
+      ${compsBadge(g)}</div>
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <div style="width:96px"><div class="microlabel">Size${fromProfile?` <span style="color:#C4654A;font-weight:500" title="From your sizing profile — not read from a tag">· profile</span>`:""}</div>
         <input class="field" style="border-color:${(size && !fromProfile)?"#E5E2DB":"#F0C89A"}" placeholder="e.g. M" value="${esc(size)}" onchange="factEdit(${n},'size',this.value)"></div>

@@ -42,6 +42,7 @@
       pricing: {
         suggested_low: v.price_low, suggested_mid: v.price, suggested_high: v.price_high,
         comp_count: v.comp_count, reasoning: `${v.comp_count} comps (demo)`,
+        comps: v.comps || [],
       },
       channel: { primary: plat, primary_reasoning: "Demo channel" },
       copy: {
