@@ -426,5 +426,13 @@ def tryon_page(garment_id: str):
     return HTMLResponse(html.replace("__GARMENT_ID__", garment_id))
 
 
+@app.get("/", response_class=HTMLResponse)
+def index():
+    # serve the SPA shell with no-store so version-bumped script tags are always seen
+    # (prevents a stale cached demo.js/app.js during a live demo)
+    html = (config.REPO_ROOT / "web" / "index.html").read_text()
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
 # static UI — mounted last so /api/* and named routes win
 app.mount("/", StaticFiles(directory=str(config.REPO_ROOT / "web"), html=True), name="web")
