@@ -180,9 +180,11 @@
     const b = document.createElement("div");
     b.textContent = "Verified replay of a successful API run";
     b.title = "Deterministic replay of artifacts from a previous successful YouCam run — no API call is made.";
+    // pointer-events:none so this label can never intercept clicks (e.g. the drawer's
+    // Apply button in the bottom-right). z-index below the drawer overlay (1000).
     b.style.cssText = "position:fixed;bottom:12px;right:12px;background:rgba(26,26,26,.82);" +
-      "color:#F5F3EE;font:500 11px Inter;padding:5px 11px;border-radius:9999px;z-index:9999;" +
-      "letter-spacing:.01em;box-shadow:0 2px 8px rgba(0,0,0,.18);backdrop-filter:blur(4px);pointer-events:auto";
+      "color:#F5F3EE;font:500 11px Inter;padding:5px 11px;border-radius:9999px;z-index:900;" +
+      "letter-spacing:.01em;box-shadow:0 2px 8px rgba(0,0,0,.18);backdrop-filter:blur(4px);pointer-events:none";
     document.body.appendChild(b);
   });
 })();

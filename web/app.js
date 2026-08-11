@@ -116,17 +116,123 @@ function currentVariant(g){
 function displayTitle(g){
   return edits(g.garment_number).title ?? currentVariant(g).title ?? (g.identity?.type || "Garment");
 }
-// "N comps" badge with a hover popover listing each comparable (source · title · price)
-function compsBadge(g){
-  const n = g.pricing?.comp_count || 0;
-  const comps = g.pricing?.comps || [];
-  if(!n) return `<span style="font-size:11px;color:#9CA3AF">no comp data</span>`;
-  const rows = comps.length
-    ? comps.map(c => `<div class="comps-row"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.title||"comparable")}</span><span class="comps-src">${esc(c.source||"")}</span><b>$${esc(c.price)}</b></div>`).join("")
-    : `<div class="comps-row" style="color:#9CA3AF">sourced via Google Search + Vertex AI</div>`;
-  return `<span class="comps" style="font-size:11px;color:#C4654A;font-weight:500">${n} comps
-    <span class="comps-pop"><div class="microlabel" style="margin-bottom:4px">Comparable sold listings</div>${rows}</span></span>`;
+const fmtUSD = v => (v == null || isNaN(+v)) ? "—"
+  : "$" + (Number.isInteger(+v) ? String(+v) : (+v).toFixed(2));
+
+// Stats derived from the EXACT comp rows shown in the drawer, so the summary can never
+// contradict the evidence. (The old baked $14–$40 range came from a different run.)
+function compStats(comps){
+  const prices = (comps || []).map(c => +c.price).filter(p => !isNaN(p)).sort((a,b)=>a-b);
+  if(!prices.length) return null;
+  const n = prices.length;
+  const median = n % 2 ? prices[(n-1)/2] : (prices[n/2-1] + prices[n/2]) / 2;
+  return { count: n, min: prices[0], max: prices[n-1], median };
 }
+
+// Compact price summary: suggested price, then row-derived count/median/range, then the
+// "Review 6 comps" button. No hover; no invented rationale for the suggested number.
+function priceSummary(g, n){
+  const comps = g.pricing?.comps || [];
+  const s = compStats(comps);
+  const priceInput = `<input value="${esc(priceOf(g))}" onchange="edits(${n}).price=this.value;refreshCard(${n})" aria-label="Suggested price"
+      style="width:70px;background:transparent;border:none;border-bottom:1px dashed #C4654A;font:600 20px Inter;padding:0 0 1px">`;
+  if(!s) return `<div style="margin-bottom:12px"><div class="microlabel">Suggested price</div>
+    <div style="display:flex;align-items:baseline;gap:8px">${priceInput}<span style="font-size:11px;color:#9CA3AF">no comp data</span></div></div>`;
+  return `<div style="margin-bottom:12px">
+    <div class="microlabel">Suggested price</div>
+    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">${priceInput}</div>
+    <div style="font:400 11.5px Inter;color:#6B7280;margin-bottom:8px">
+      ${s.count} sold listings · Median ${fmtUSD(s.median)} · Range ${fmtUSD(s.min)}–${fmtUSD(s.max)}</div>
+    <button onclick="openComps(${n})" class="btn-ghost" style="font:500 12px Inter;padding:6px 12px">Review ${s.count} comps</button>
+  </div>`;
+}
+/* ---------------- comparable-sales drawer (click, not hover) ---------------- */
+let _compsReturnFocus = null;
+
+function openComps(n){
+  _compsReturnFocus = document.activeElement;
+  const g = garment(n); if(!g) return;
+  const host = document.getElementById("drawer-root") || (() => {
+    const d = document.createElement("div"); d.id = "drawer-root"; document.body.appendChild(d); return d;
+  })();
+  host.innerHTML = compsDrawer(g, n);
+  document.body.style.overflow = "hidden";
+  // move focus into the drawer
+  const first = host.querySelector("[data-drawer-focus]");
+  if(first) first.focus();
+  document.addEventListener("keydown", _compsKeydown);
+}
+function closeComps(){
+  const host = document.getElementById("drawer-root");
+  if(host) host.innerHTML = "";
+  document.body.style.overflow = "";
+  document.removeEventListener("keydown", _compsKeydown);
+  if(_compsReturnFocus && _compsReturnFocus.focus) _compsReturnFocus.focus();  // restore focus
+  _compsReturnFocus = null;
+}
+function _compsKeydown(e){ if(e.key === "Escape") closeComps(); }
+
+function applyCompsPrice(n){
+  const inp = document.getElementById("drawer-price");
+  const raw = (inp?.value || "").replace(/[^0-9.]/g, "");
+  const val = parseFloat(raw);
+  if(isNaN(val) || val <= 0){ inp?.focus(); if(inp) inp.style.borderColor = "#DC2626"; return; }
+  edits(n).price = fmtUSD(val);        // update ONLY this listing's edited price
+  closeComps();
+  refreshCard(n);                      // reflect the new price on just this card
+}
+
+function compsDrawer(g, n){
+  const comps = g.pricing?.comps || [];
+  const s = compStats(comps);
+  const title = displayTitle(g);
+  const cur = String(priceOf(g)).replace(/[^0-9.]/g, "") || "";
+  const stat = (label, val) => `<div style="flex:1"><div class="microlabel" style="margin-bottom:2px">${label}</div>
+    <div style="font:600 15px Inter;color:#1A1A1A">${val}</div></div>`;
+  const rows = comps.map(c => {
+    const src = esc(c.source || "");
+    return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-top:1px solid #EDEAE3">
+      <div style="flex:1;min-width:0">
+        <div style="font:400 12.5px Inter;color:#1A1A1A;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden" title="${esc(c.title||"")}">${esc(c.title||"Comparable listing")}</div>
+        ${src ? `<span style="display:inline-block;margin-top:6px;background:#F0EEE8;color:#6B7280;font:500 10px Inter;padding:2px 8px;border-radius:9999px">${src}</span>` : ""}
+      </div>
+      <div style="font:600 15px Inter;color:#1A1A1A;white-space:nowrap">${fmtUSD(c.price)}</div>
+    </div>`;
+  }).join("");
+  return `
+  <div onclick="if(event.target===this)closeComps()" role="presentation"
+       style="position:fixed;inset:0;background:rgba(26,26,26,.34);z-index:1000;display:flex;justify-content:flex-end">
+    <div role="dialog" aria-modal="true" aria-label="Comparable sales for ${esc(title)}" class="drawer-panel"
+         style="width:500px;max-width:100vw;height:100%;background:#FAFAF7;box-shadow:-8px 0 30px rgba(0,0,0,.18);display:flex;flex-direction:column;animation:oafade .2s ease">
+      <div style="padding:20px 22px;border-bottom:1px solid #E5E2DB;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+        <div>
+          <div style="font:500 18px Inter;color:#1A1A1A">Comparable sales</div>
+          <div style="font:400 12.5px Inter;color:#6B7280;margin-top:2px">Evidence for the ${esc(fmtUSD(cur||priceOf(g)))} suggested price</div>
+          <div style="font:400 11px Inter;color:#9CA3AF;margin-top:2px">${esc(title)}</div>
+        </div>
+        <button data-drawer-focus onclick="closeComps()" aria-label="Close" class="btn-ghost" style="padding:6px 10px;font-size:16px;line-height:1">✕</button>
+      </div>
+      <div style="padding:18px 22px;border-bottom:1px solid #E5E2DB;display:flex;gap:14px">
+        ${s ? stat("Sold listings", s.count) + stat("Median", fmtUSD(s.median)) + stat("Range", `${fmtUSD(s.min)}–${fmtUSD(s.max)}`) : `<div style="color:#9CA3AF;font:400 13px Inter">No comparable data available.</div>`}
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:6px 22px 18px">
+        ${comps.length ? rows : `<div style="color:#9CA3AF;font:400 13px Inter;padding:16px 0">No comparable sold listings to show.</div>`}
+      </div>
+      <div style="padding:16px 22px;border-top:1px solid #E5E2DB;background:#F5F3EE">
+        <div class="microlabel" style="margin-bottom:6px">Set listing price</div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <div style="position:relative;flex:1">
+            <span style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#6B7280;font:500 14px Inter">$</span>
+            <input id="drawer-price" type="text" inputmode="decimal" value="${esc(cur)}" aria-label="Listing price"
+                   style="width:100%;background:#fff;border:1px solid #E5E2DB;border-radius:8px;font:500 15px Inter;color:#1A1A1A;padding:10px 12px 10px 22px">
+          </div>
+          <button onclick="applyCompsPrice(${n})" class="btn" style="padding:10px 18px">Apply price</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
 function priceOf(g){
   const e = edits(g.garment_number);
   if(e.price) return e.price;
@@ -500,10 +606,7 @@ function rReviewCard(g){
     </div>
     <div style="font:400 10px Inter;color:#9CA3AF;margin-bottom:12px;display:flex;align-items:center;gap:4px">AI preview — verify logos/text against the original photo (inset)</div>
     <input class="field" style="font-weight:500;font-size:13px;margin-bottom:10px" value="${esc(displayTitle(g))}" onchange="edits(${n}).title=this.value;render()">
-    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:12px">
-      <input value="${esc(priceOf(g))}" onchange="edits(${n}).price=this.value" style="width:58px;background:transparent;border:none;border-bottom:1px dashed #C4654A;font:500 16px Inter;padding:0 0 1px">
-      <span style="font-size:11px;color:#9CA3AF">${g.pricing?.suggested_low?`$${g.pricing.suggested_low}–${g.pricing.suggested_high}`:"no comp data"}</span>
-      ${compsBadge(g)}</div>
+    ${priceSummary(g, n)}
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <div style="width:96px"><div class="microlabel">Size${fromProfile?` <span style="color:#C4654A;font-weight:500" title="From your sizing profile — not read from a tag">· profile</span>`:""}</div>
         <input class="field" style="border-color:${(size && !fromProfile)?"#E5E2DB":"#F0C89A"}" placeholder="e.g. M" value="${esc(size)}" onchange="factEdit(${n},'size',this.value)"></div>
