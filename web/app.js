@@ -18,8 +18,12 @@ const S = {
   copied: {},             // garment_number -> true briefly after copy
   copiedLink: {},         // garment_number -> true briefly after try-on link copy
   parsing: false,
+  publicBase: "",          // public URL for shareable try-on links (from /api/config)
 };
 let pollTimer = null;
+
+// fetch the public base URL once so try-on links are shareable (not localhost)
+fetch("/api/config").then(r => r.json()).then(d => { S.publicBase = d.public_base_url || ""; }).catch(() => {});
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -77,10 +81,14 @@ async function poll(){
   try{
     const d = await (await fetch(`/api/batch/${S.batchId}`)).json();
     S.status = d;
-    // flip to review once the backend batch is done (regardless of per-step failures)
-    if(d.status === "done" && S.screen === "processing"){
+    // flip to review once the backend batch is done — hold on the completed cards for
+    // 2s first so "3 of 3 complete" is visible, then advance.
+    if(d.status === "done" && S.screen === "processing" && !S._advancing){
       if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
-      S.screen = "review";
+      S._advancing = true;
+      render();                                   // paint the all-done state
+      setTimeout(() => { S._advancing = false; S.screen = "review"; render(); }, 2000);
+      return;
     }
   }catch(e){ console.error("poll error", e); return; }   // keep the interval alive
   try{ render(); }catch(e){ console.error("render error", e); }
@@ -132,9 +140,11 @@ function setCopyMode(n, m){ S.copyMode[n] = m; render(); }
 
 function baseLabel(b){ return {"mannequin":"female mannequin","mannequin-male":"male mannequin","model":"model photo"}[b] || b; }
 function garmentId(n){ const g = garment(n); return (g && g.garment_id) || `${S.batchId}_${n}`; }
-function tryonLink(g){ return `${location.host}/tryon/${garmentId(g.garment_number)}`; }
+function tryonBase(){ return S.publicBase || location.origin; }
+function tryonUrl(n){ return `${tryonBase()}/tryon/${garmentId(n)}`; }
+function tryonLink(g){ return tryonUrl(g.garment_number).replace(/^https?:\/\//,""); }
 function copyTryonLink(n){
-  navigator.clipboard.writeText(location.origin + `/tryon/${garmentId(n)}`).catch(()=>{});
+  navigator.clipboard.writeText(tryonUrl(n)).catch(()=>{});
   S.copiedLink[n] = true; render();
   setTimeout(() => { S.copiedLink[n] = false; render(); }, 1600);
 }
@@ -183,7 +193,8 @@ function pasteText(g){
   ];
   const meas = e.measurements ? `\nMeasurements: ${e.measurements}` : "";
   const tags = (v.hashtags || []).join(" ");
-  return `${displayTitle(g)}\n\n${v.description || ""}${meas}\n\n${tags}\n\n` + specifics.map(([k,x]) => `${k}: ${x}`).join("\n");
+  const tryon = `👗 Try it on yourself: ${tryonLink(g)}`;
+  return `${displayTitle(g)}\n\n${v.description || ""}${meas}\n\n${tryon}\n\n${tags}\n\n` + specifics.map(([k,x]) => `${k}: ${x}`).join("\n");
 }
 
 function copyListing(n){
@@ -497,12 +508,9 @@ function rReviewCard(g){
         <span style="font:600 9px Inter;color:#9CA3AF;text-transform:uppercase;letter-spacing:.06em">Listing preview · ${esc(plat)} · plain text</span>
         <span style="cursor:pointer;font:500 10px Inter;color:${S.copied[n]?"#16A34A":"#6B7280"}" onclick="copyListing(${n})">${S.copied[n]?"✓ Copied":"Copy"}</span></div>
       <div style="font:600 12px Inter;line-height:1.35;margin-bottom:7px">${esc(displayTitle(g))}</div>
-      <div style="font:400 11.5px Inter;color:#4B4B4B;line-height:1.5;white-space:pre-line">${esc(v.description||"")}\n\n${esc((v.hashtags||[]).join(" "))}</div>
+      <div style="font:400 11.5px Inter;color:#4B4B4B;line-height:1.5;white-space:pre-line">${esc(v.description||"")}\n\n👗 Try it on yourself: ${esc(tryonLink(g))}\n\n${esc((v.hashtags||[]).join(" "))}</div>
       ${S.busyCopy[n]?`<div style="position:absolute;inset:0;background:rgba(255,255,255,.74);display:flex;align-items:center;justify-content:center;gap:8px"><span class="spin" style="width:15px;height:15px;border-width:2px"></span><span style="font:500 11px Inter;color:#6B7280">updating copy…</span></div>`:""}
     </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;background:#F5F3EE;border:1px dashed #DDD8CF;border-radius:8px;padding:8px 10px;margin-bottom:12px">
-      <span style="font:500 11px Inter;color:#6B7280">Seller voice — match my tone</span>
-      <span style="font:600 9px Inter;color:#9CA3AF;background:#FAFAF7;border:1px solid #E5E2DB;padding:2px 7px;border-radius:9999px;text-transform:uppercase;letter-spacing:.06em">Soon</span></div>
     <div style="display:flex;align-items:center;gap:8px;background:#FAFAF7;border:1px solid #E5E2DB;border-radius:8px;padding:8px 10px;margin-bottom:12px">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="flex:none"><ellipse cx="12" cy="12" rx="10" ry="6.5" stroke="#6B7280" stroke-width="2.2"/><circle cx="12" cy="12" r="3" fill="#6B7280"/></svg>
       <span style="flex:1;min-width:0;font:11px ui-monospace,monospace;color:#6B7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${tryonLink(g)}</span>

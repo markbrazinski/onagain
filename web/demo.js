@@ -63,14 +63,16 @@
     const u = (typeof url === "string" ? url : url.url) || "";
     const path = u.replace(location.origin, "");
 
-    // parse -> the golden split
+    // parse -> the golden split. Hold ~2.5s so the "isolating garments" beat reads
+    // (the real parse takes a few seconds; the compressed number would be too fast).
     if (path === "/api/parse" && opts?.method === "POST") {
-      await sleep((TIMINGS.parse_s || 3) * 1000 / SPEED);
+      await sleep(2500);
       return json({
         batch_id: "golden", gate: { pass: true, reason: "Demo replay — clean split" },
         source_url: "/api/replay/source",
         garments: GIDS.map((gid, i) => ({
           garment_number: i + 1, garment_id: gid, type: LISTINGS[gid].type,
+          box_pct: LISTINGS[gid].box_pct,          // orange bounding-box overlay
           crop_url: `/api/replay/crop/${gid}`,
         })),
       });

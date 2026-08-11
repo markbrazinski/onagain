@@ -234,6 +234,12 @@ def regen_image(batch_id: str, n: int, req: RegenImageReq):
                     "ranking_reason": gm["vto"].get("ranking_reason")}}
 
 
+@app.get("/api/config")
+def client_config():
+    """Small client config — the public base URL used for shareable buyer try-on links."""
+    return {"public_base_url": config.PUBLIC_BASE_URL}
+
+
 @app.get("/api/bases")
 def list_bases():
     return {"bases": [{"name": f.stem, "url": f"/api/base/{f.stem}"}

@@ -28,6 +28,11 @@ if _sa_b64 and not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
 YOUCAM_API_KEY = os.environ.get("YOUCAM_API_KEY", "")
 YOUCAM_API_BASE = "https://yce-api-01.makeupar.com/s2s/v2.0"
 
+# Public base URL for buyer try-on links shared into marketplace listings. Defaults to
+# the deployed App Runner service; override with PUBLIC_BASE_URL for a different host.
+PUBLIC_BASE_URL = os.environ.get(
+    "PUBLIC_BASE_URL", "https://cyb423piaw.us-east-1.awsapprunner.com")
+
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 # Comps agent search. Primary: Gemini + Google Search grounding on Vertex (uses gcloud
