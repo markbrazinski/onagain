@@ -20,7 +20,7 @@ PLATFORM_RULES = {
 - Description: SHORTEST of the three — 2-3 snappy lines max. Fun, high-energy, like texting a
   friend ("this cardigan? obsessed. goes with literally everything 🌿"). Emojis welcome. Get in,
   hype it, get out. No corporate tone, no long condition paragraphs.
-- 6-10 aesthetic hashtags (#y2k, #vintage, #cottagecore, #thrifted).""",
+- MAX 5 hashtags (Depop's hard limit) — aesthetic tags (#y2k, #vintage, #cottagecore, #thrifted).""",
     "ebay": """EBAY — terse, factual, TO THE POINT (no fluff):
 - Title: 80 chars, keyword-dense. Brand + Type + Details + Size + Condition.
 - Description: SHORT and dry. Bullet-style facts only — material, size, measurements, condition,
@@ -62,6 +62,10 @@ Return ONLY valid JSON:
 ]}}"""
 
 
+# platform hashtag limits (only Depop has a hard 5-tag cap that matters here)
+HASHTAG_CAP = {"depop": 5}
+
+
 def generate(card: dict, comps: dict, platform: str = "ebay") -> dict:
     rules = PLATFORM_RULES.get(platform.lower(), PLATFORM_RULES["ebay"])
     pricing = {k: comps.get(k) for k in ("suggested_low", "suggested_mid", "suggested_high", "reasoning")}
@@ -71,6 +75,14 @@ def generate(card: dict, comps: dict, platform: str = "ebay") -> dict:
     if text.startswith("```"):
         text = text.split("```")[1].lstrip("json").strip()
     out = json.loads(text)
+
+    # hard hashtag caps per platform (Depop allows at most 5) — enforce even if the
+    # model over-generates, so the copy is always platform-valid.
+    cap = HASHTAG_CAP.get(platform.lower())
+    if cap:
+        for v in out.get("variants", []):
+            if isinstance(v.get("hashtags"), list):
+                v["hashtags"] = v["hashtags"][:cap]
 
     cond = str(card.get("condition_estimate", "")).lower()
     out["flags"] = {
