@@ -79,19 +79,21 @@
       });
     }
 
-    // inventory -> the one starter listing, PLUS any golden garments already approved
-    // this session. New garments populate only on their save/approve action.
+    // inventory -> the one starter listing, PLUS any golden garments already saved this
+    // session. Each saved garment's marketplace + try-on count come from the REAL shared
+    // listing_state (so a completed buyer try-on shows here as "1 tried on"), keeping the
+    // seller-to-buyer-to-seller loop coherent.
     if (path === "/api/inventory") {
       const out = [];
       if (STARTER && STARTER.garment_id) {
         out.push({ ...STARTER, hero_photo: "/api/replay/starter-hero", status: "listed" });
       }
-      GIDS.filter(gid => APPROVED.has(gid)).forEach(gid => {
-        const v = LISTINGS[gid];
-        out.push({ ...v, hero_photo: `/api/replay/render/${gid}`, status: "listed",
-                   tryon_count: 0, created_at: "2026-08-10",
-                   buy_url: "https://" + v.platform + ".com" });
-      });
+      // saved golden listings come from server-side listing_state (survive navigation +
+      // carry the real marketplace and completed-try-on count)
+      try {
+        const s = await (await realFetch("/api/replay/saved")).json();
+        (s.listings || []).forEach(l => out.push({ ...l, created_at: "2026-08-10" }));
+      } catch (e) {}
       return json({ listings: out });
     }
 
@@ -148,7 +150,16 @@
       try { platform = opts?.body && JSON.parse(opts.body).platform; } catch (e) {}
       const g = garmentShape(GIDS[Number(gm[1]) - 1], Number(gm[1]) - 1, platform);
       if (gm[2] === "approve") APPROVED.add(g.garment_id);
-      return json({ status: "listed", garment_id: g.garment_id, tryon_url: `/tryon/${g.garment_id}`,
+      // Bridge the seller's marketplace choice into shared listing_state (a REAL call) so
+      // the buyer landing page + result CTA reflect the switch. This is the one place the
+      // replay writes real state; it makes no sponsor API call.
+      if (platform && (gm[2] === "regen_copy" || gm[2] === "approve")) {
+        realFetch(`/api/listing/${g.garment_id}/marketplace`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ platform }),
+        }).catch(() => {});
+      }
+      return json({ status: "saved", garment_id: g.garment_id, tryon_url: `/tryon/${g.garment_id}`,
                     copy: g.copy, identity: g.identity, channel: g.channel,
                     vto: { best_url: g.vto.best_url, ranking_reason: g.vto.ranking_reason } });
     }
@@ -163,12 +174,15 @@
     return realFetch(url, opts);
   };
 
-  // banner so it's obvious we're in replay mode
+  // subtle, honest replay disclosure — a small pill, not a dominant bar. Keeps the run
+  // clearly labeled as a replay without obscuring the product during filming.
   window.addEventListener("DOMContentLoaded", () => {
     const b = document.createElement("div");
-    b.textContent = "VERIFIED REPLAY — replaying golden demo (no API calls)";
-    b.style.cssText = "position:fixed;bottom:0;left:0;right:0;background:#1A1A1A;color:#F5C518;" +
-      "font:600 12px Inter;text-align:center;padding:6px;z-index:9999;letter-spacing:.02em";
+    b.textContent = "Verified replay of a successful API run";
+    b.title = "Deterministic replay of artifacts from a previous successful YouCam run — no API call is made.";
+    b.style.cssText = "position:fixed;bottom:12px;right:12px;background:rgba(26,26,26,.82);" +
+      "color:#F5F3EE;font:500 11px Inter;padding:5px 11px;border-radius:9999px;z-index:9999;" +
+      "letter-spacing:.01em;box-shadow:0 2px 8px rgba(0,0,0,.18);backdrop-filter:blur(4px);pointer-events:auto";
     document.body.appendChild(b);
   });
 })();

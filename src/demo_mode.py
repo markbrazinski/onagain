@@ -54,6 +54,27 @@ def listings():
     return {"listings": list(_load().values())}
 
 
+@router.get("/saved")
+def saved():
+    """Golden listings the seller has saved this session, with CURRENT marketplace + try-on
+    count from shared listing_state — so the inventory payoff survives page navigations and
+    reflects a completed buyer try-on. Keeps the seller->buyer->seller loop coherent."""
+    from src import listing_state
+    bundle = _load()
+    out = []
+    for gid in listing_state.saved_ids():
+        v = bundle.get(gid)
+        if not v:
+            continue
+        st = listing_state.get(gid) or {}
+        out.append({**v, "garment_id": gid, "status": "listed",
+                    "hero_photo": f"/api/replay/render/{gid}",
+                    "platform": st.get("platform", v.get("platform")),
+                    "tryon_count": st.get("tryon_count", 0),
+                    "buy_url": f"https://{st.get('platform', v.get('platform'))}.com"})
+    return {"listings": out}
+
+
 @router.get("/starter")
 def starter():
     """The one pre-existing inventory listing shown on first load (img3 dress, ~4 try-ons)."""

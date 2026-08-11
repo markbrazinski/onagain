@@ -302,7 +302,7 @@ function rInventory(){
     return `<div class="card fade">
       <div style="position:relative;aspect-ratio:4/5;border-radius:8px;overflow:hidden;background:#efece5;display:flex;align-items:center;justify-content:center;margin-bottom:11px">
         ${hero}
-        <span style="position:absolute;top:9px;left:9px;background:#F0FDF4;color:#16A34A;font:500 11px Inter;padding:3px 8px;border-radius:9999px">✓ Listed</span>
+        <span style="position:absolute;top:9px;left:9px;background:#F0FDF4;color:#16A34A;font:500 11px Inter;padding:3px 8px;border-radius:9999px">✓ Saved</span>
         <span style="position:absolute;bottom:9px;right:9px;display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.92);color:#6B7280;font:500 11px Inter;padding:3px 8px;border-radius:9999px" title="try-ons">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="12" rx="10" ry="6.5" stroke="#6B7280" stroke-width="2.2"/><circle cx="12" cy="12" r="3" fill="#6B7280"/></svg>${it.tryon_count||0} tried on</span>
       </div>
@@ -453,7 +453,7 @@ function rReview(){
   const cards = gs.map(g => `<div id="rcard-${g.garment_number}">${rReviewCard(g)}</div>`).join("");
   return `<div class="fade">
     <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:20px">
-      <div><h1>Review listings</h1><p class="sub">${approvedCount} of ${gs.length} approved · add sizes, then list</p></div>
+      <div><h1>Review listings</h1><p class="sub">${approvedCount} of ${gs.length} saved · confirm details, then save each</p></div>
       <button class="btn-ghost" onclick="go('inventory')">Done → inventory</button></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:16px;align-items:stretch">${cards}</div></div>`;
 }
@@ -474,9 +474,9 @@ function rReviewCard(g){
     return `<div class="card" style="display:flex;flex-direction:column">
       <div style="position:relative;aspect-ratio:4/5;border-radius:8px;overflow:hidden;margin-bottom:12px;background:#efece5">
         <img src="${g.vto?.best_url || g.crop_url}" style="width:100%;height:100%;object-fit:contain">
-        <span style="position:absolute;top:9px;left:9px;background:#F0FDF4;color:#16A34A;font:500 11px Inter;padding:3px 8px;border-radius:9999px">✓ Approved</span></div>
+        <span style="position:absolute;top:9px;left:9px;background:#F0FDF4;color:#16A34A;font:500 11px Inter;padding:3px 8px;border-radius:9999px">✓ Saved</span></div>
       <div style="font-size:13px;font-weight:500;margin-bottom:10px">${esc(displayTitle(g))}</div>
-      <div style="font-size:11px;color:#6B7280;margin-bottom:12px">Listed to <b style="color:#1A1A1A">${esc(currentPlatform(g))}</b></div>
+      <div style="font-size:11px;color:#6B7280;margin-bottom:12px">Formatted for <b style="color:#1A1A1A">${esc(currentPlatform(g))}</b> · list it yourself</div>
       <div style="display:flex;gap:8px;margin-top:auto">
         <button class="btn-ghost" style="flex:1" onclick="copyListing(${n})">${S.copied[n]?"Copied ✓":"Copy listing"}</button>
         <button class="btn-ghost" onclick="downloadPhoto(${n})">Photo</button>
@@ -542,7 +542,7 @@ function rReviewCard(g){
     ${flags?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${flags}</div>`:""}
     <div style="display:flex;gap:8px;margin-top:auto">
       <button class="btn-ghost" onclick="downloadPhoto(${n})">Photo</button>
-      <button class="btn" style="flex:1" onclick="approveListing(${n})">Approve & list</button>
+      <button class="btn" style="flex:1" onclick="approveListing(${n})">Save listing</button>
     </div>
   </div>`;
 }

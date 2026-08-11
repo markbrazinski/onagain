@@ -54,3 +54,31 @@ def increment_tryon(garment_id: str) -> int:
         item["tryon_count"] = item.get("tryon_count", 0) + 1
         _save(data)
         return item["tryon_count"]
+
+
+def set_tryon(garment_id: str, count: int) -> int:
+    """Set the try-on counter to an absolute value (idempotent). Used by listing_state,
+    which owns de-duplication — so a repeated completion writes the same count, not +1."""
+    with _lock:
+        data = _load()
+        item = data.get(garment_id)
+        if not item:
+            return 0
+        item["tryon_count"] = count
+        _save(data)
+        return count
+
+
+def set_marketplace(garment_id: str, platform: str, price=None) -> bool:
+    """Reflect a seller marketplace/price change into the durable inventory listing."""
+    with _lock:
+        data = _load()
+        item = data.get(garment_id)
+        if not item:
+            return False
+        item["platform"] = platform
+        item["buy_url"] = f"https://{platform}.com"
+        if price is not None:
+            item["price"] = price
+        _save(data)
+        return True

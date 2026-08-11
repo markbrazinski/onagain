@@ -296,7 +296,8 @@ class ApproveReq(BaseModel):
 
 @app.post("/api/batch/{batch_id}/garment/{n}/approve")
 def approve(batch_id: str, n: int, req: ApproveReq):
-    """Persist a finished listing to inventory + write the buyer-page garment JSON."""
+    """Save a finished listing to the seller's inventory and make its buyer try-on link
+    live. OnAgain does NOT publish to any marketplace — the seller lists manually."""
     batch = BATCHES.get(batch_id)
     gm = batch and next((g for g in batch["garments"] if g["garment_number"] == n), None)
     if not gm:
@@ -317,7 +318,7 @@ def approve(batch_id: str, n: int, req: ApproveReq):
         "created_at": req.created_at or _today(),
     }
     inventory.upsert(listing)
-    return {"status": "listed", "garment_id": req.garment_id,
+    return {"status": "saved", "garment_id": req.garment_id,
             "tryon_url": f"/tryon/{req.garment_id}"}
 
 
@@ -334,10 +335,38 @@ def get_inventory():
 
 @app.get("/api/listing/{garment_id}")
 def get_listing(garment_id: str):
+    """Buyer landing reads this. Resolves the canonical listing from shared listing_state
+    (which seeds from the golden bundle or live inventory), so a buyer deep link always
+    opens — and reflects the seller's current marketplace + price."""
+    from src import listing_state
+    st = listing_state.get(garment_id)
+    if st:
+        return {"garment_id": garment_id, "title": st["title"], "price": st["price"],
+                "platform": st["platform"], "size": st.get("size"),
+                "hero_photo": st["hero_url"], "buy_url": f"https://{st['platform']}.com",
+                "tryon_count": st["tryon_count"]}
     item = inventory.get(garment_id)
     if not item:
         raise HTTPException(404, "unknown listing")
     return item
+
+
+class MarketplaceReq(BaseModel):
+    platform: str
+    price: Optional[object] = None
+
+
+@app.post("/api/listing/{garment_id}/marketplace")
+def set_listing_marketplace(garment_id: str, req: MarketplaceReq):
+    """Single write when the seller changes a saved listing's marketplace (and price).
+    Propagates to the buyer landing page, result CTA, and inventory — one source of truth."""
+    from src import listing_state
+    st = listing_state.set_marketplace(garment_id, req.platform.lower(), req.price)
+    if st is None:
+        raise HTTPException(404, "unknown listing")
+    inventory.set_marketplace(garment_id, req.platform.lower(), req.price)
+    return {"garment_id": garment_id, "platform": st["platform"], "price": st["price"],
+            "buy_url": f"https://{st['platform']}.com"}
 
 
 @app.get("/api/listing/{garment_id}/hero")
@@ -350,14 +379,31 @@ def listing_hero(garment_id: str):
 
 # ---------------------------------------------------------------- buyer try-on
 
+def _tryon_result(garment_id: str, render_url: str, token: str) -> dict:
+    """Shape the buyer result from the CURRENT shared listing state (so the CTA + price
+    reflect the seller's marketplace switch) and record ONE idempotent try-on."""
+    from src import listing_state
+    st = listing_state.get(garment_id) or {}
+    plat = st.get("platform", "depop")
+    count = listing_state.register_tryon(garment_id, token)   # idempotent by token
+    return {"render_url": render_url,
+            "garment_title": st.get("title"), "garment_price": st.get("price"),
+            "buy_url": f"https://{plat}.com", "platform": plat,
+            "tryon_count": count}
+
+
 @app.post("/api/tryon")
-async def tryon(garment_id: str = Form(...), selfie: UploadFile = File(...)):
-    """Anonymous, ephemeral buyer try-on. Selfie is deleted immediately after VTO.
+async def tryon(garment_id: str = Form(...), selfie: UploadFile = File(...),
+                completion_token: str = Form("")):
+    """Anonymous, ephemeral buyer try-on. Selfie is deleted immediately after generation.
 
     Privacy contract (enforced here, S3-lifecycle-equivalent locally):
       - no cookies, no user id, nothing about the buyer persisted
-      - selfie written to a temp path, deleted right after render (or on failure)
-      - only the render is kept (24h-equivalent; local file)
+      - selfie written to a request-scoped temp path, deleted right after generation
+        returns — on success, failure, AND every early error path
+      - the selfie bytes / URL are never logged
+      - only the anonymous render is kept; the sole persisted event is the +1 try-on count
+    completion_token de-dupes a refreshed/retried completion so the counter can't inflate.
     """
     if not selfie:
         raise HTTPException(400, "no selfie")
@@ -369,18 +415,16 @@ async def tryon(garment_id: str = Form(...), selfie: UploadFile = File(...)):
         raise HTTPException(400, "selfie must be JPEG or PNG")
 
     # verified replay: garment is in the golden bundle -> return the pre-baked buyer
-    # render, no VTO/Claude spend. Selfie is accepted then discarded (privacy contract holds).
-    from src.demo_mode import GOLDEN, _load as _golden_load
-    _pre = GOLDEN / "buyer" / f"{garment_id}.jpg"
-    if _pre.exists():
-        gl = _golden_load().get(garment_id, {})
-        return {"render_url": f"/api/replay/buyer/{garment_id}",
-                "garment_title": gl.get("title"), "garment_price": gl.get("price"),
-                "buy_url": BUY_URLS.get(gl.get("platform", "depop"), "https://depop.com"),
-                "platform": gl.get("platform"), "tryon_count": gl.get("comp_count", 0)}
+    # render, no VTO/Claude spend. Selfie is accepted then immediately discarded (the
+    # privacy contract holds identically in replay). Result CTA + count come from the
+    # SAME shared listing_state as live, so a Depop switch shows through here too.
+    from src.demo_mode import GOLDEN
+    if (GOLDEN / "buyer" / f"{garment_id}.jpg").exists():
+        del data  # replay does not use the selfie bytes; drop them right away
+        return _tryon_result(garment_id, f"/api/replay/buyer/{garment_id}", completion_token)
 
-    item = inventory.get(garment_id) if garment_id else None
-    if not item:
+    from src import listing_state
+    if not listing_state.get(garment_id):
         raise HTTPException(400, "invalid garment_id")
 
     tryon_dir = config.WORK_DIR / "tryon"
@@ -390,7 +434,7 @@ async def tryon(garment_id: str = Form(...), selfie: UploadFile = File(...)):
 
     garment_hero = LISTINGS_DIR / f"{garment_id}.jpg"
     if not garment_hero.exists():
-        selfie_path.unlink(missing_ok=True)
+        selfie_path.unlink(missing_ok=True)   # clean up the buyer photo on this error path too
         raise HTTPException(400, "listing has no garment image")
 
     render_path = tryon_dir / f"{garment_id}_{uuid.uuid4().hex}.jpg"
@@ -407,13 +451,8 @@ async def tryon(garment_id: str = Form(...), selfie: UploadFile = File(...)):
     finally:
         selfie_path.unlink(missing_ok=True)   # selfie gone regardless of outcome
 
-    new_count = inventory.increment_tryon(garment_id)
-    return {
-        "render_url": f"/api/tryon/render/{render_path.name}",
-        "garment_title": item.get("title"), "garment_price": item.get("price"),
-        "buy_url": item.get("buy_url"), "platform": item.get("platform"),
-        "tryon_count": new_count,
-    }
+    # generation succeeded -> record ONE idempotent try-on and shape from current state
+    return _tryon_result(garment_id, f"/api/tryon/render/{render_path.name}", completion_token)
 
 
 @app.get("/api/tryon/render/{name}")

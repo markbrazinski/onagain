@@ -80,7 +80,7 @@ function result(r){
     <div class="hero"><img src="${r.render_url}" style="max-height:70vh"></div>
     <div class="pad">
       <div class="title">${esc(r.garment_title)} · ${esc(typeof r.garment_price==="number"?"$"+r.garment_price:r.garment_price||"")}</div>
-      <a class="btn" href="${esc(r.buy_url||"#")}" target="_blank" rel="noopener" style="margin-top:14px">Buy on ${esc((r.platform||"marketplace").replace(/^./,c=>c.toUpperCase()))} →</a>
+      <a class="btn" href="${esc(r.buy_url||"#")}" target="_blank" rel="noopener" style="margin-top:14px">View on ${esc((r.platform||"marketplace").replace(/^./,c=>c.toUpperCase()))} →</a>
       <button class="btn-out" onclick="landing()">Try another photo</button>
     </div>`;
 }
@@ -102,11 +102,18 @@ function pickSelfie(){
   inp.click();
 }
 
+// one completion token per selfie submission — de-dupes the try-on count if the same
+// request is retried by the network layer (a fresh selfie = a fresh token = a new count)
+function newToken(){
+  return (crypto.randomUUID ? crypto.randomUUID()
+    : String(Date.now()) + Math.random().toString(16).slice(2));
+}
 async function submit(file){
   processing();
   const fd = new FormData();
   fd.append("garment_id", GARMENT_ID);
   fd.append("selfie", file);
+  fd.append("completion_token", newToken());
   try{
     const res = await fetch("/api/tryon", { method:"POST", body:fd });
     if(!res.ok) throw new Error("render failed");
