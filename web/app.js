@@ -79,7 +79,16 @@ async function generate(){
 async function poll(){
   if(!S.batchId) return;
   try{
-    const d = await (await fetch(`/api/batch/${S.batchId}`)).json();
+    const r = await fetch(`/api/batch/${S.batchId}`);
+    if(r.status === 404){
+      // batch is gone (server restarted — in-memory batches don't survive). Stop polling
+      // forever and tell the user, instead of spinning on a dead batch.
+      if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+      alert("This batch was lost (the server restarted). Start a new batch.");
+      resetBatch(); go("upload");
+      return;
+    }
+    const d = await r.json();
     S.status = d;
     // flip to review once the backend batch is done — hold on the completed cards for
     // 2s first so "3 of 3 complete" is visible, then advance.

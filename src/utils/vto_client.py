@@ -15,7 +15,7 @@ import requests
 from src import config
 
 POLL_INTERVAL = 3
-POLL_TIMEOUT = 180
+POLL_TIMEOUT = 90   # real renders finish ~40s; 90s catches a stuck task without a long hang
 
 
 def _headers():
