@@ -200,17 +200,11 @@ async function regenImage(n){
 
 function pasteText(g){
   const v = currentVariant(g);
-  const id = g.identity || {};
   const e = edits(g.garment_number);
-  const specifics = [
-    ["Brand", e.brand ?? id.brand ?? "Unbranded"], ["Size", e.size ?? id.visible_size ?? "—"],
-    ["Color", e.color ?? id.color ?? "—"], ["Material", e.material_estimate ?? id.material_estimate ?? "—"],
-    ["Condition", e.condition_estimate ?? id.condition_estimate ?? "—"],
-  ];
   const meas = e.measurements ? `\nMeasurements: ${e.measurements}` : "";
   const tags = (v.hashtags || []).join(" ");
   const tryon = `👗 Try it on yourself: ${tryonLink(g)}`;
-  return `${displayTitle(g)}\n\n${v.description || ""}${meas}\n\n${tryon}\n\n${tags}\n\n` + specifics.map(([k,x]) => `${k}: ${x}`).join("\n");
+  return `${displayTitle(g)}\n\n${v.description || ""}${meas}\n\n${tryon}\n\n${tags}`;
 }
 
 function copyListing(n){
