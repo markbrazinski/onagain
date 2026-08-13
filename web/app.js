@@ -401,6 +401,7 @@ function render(){
   // processing screen updates in place across polls to avoid full-DOM flicker
   if(S.screen === "processing" && render._screen === "processing"){ patchProcessing(); return; }
   render._screen = S.screen;
+  m.classList.toggle("wide", S.screen === "review");   // wider canvas so 3 review cards fit
   if(S.screen === "inventory") m.innerHTML = rInventory();
   else if(S.screen === "upload") m.innerHTML = rUpload();
   else if(S.screen === "processing") m.innerHTML = rProcessing();
@@ -591,7 +592,7 @@ function rReview(){
     <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:20px">
       <div><h1>Review listings</h1><p class="sub">${approvedCount} of ${gs.length} saved · confirm details, then save each</p></div>
       <button class="btn-ghost" onclick="go('inventory')">Done → inventory</button></div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:16px;align-items:stretch">${cards}</div></div>`;
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:stretch" class="review-grid">${cards}</div></div>`;
 }
 
 function rReviewCard(g){
