@@ -176,17 +176,15 @@
     return realFetch(url, opts);
   };
 
-  // subtle, honest replay disclosure — a small pill, not a dominant bar. Keeps the run
-  // clearly labeled as a replay without obscuring the product during filming.
-  window.addEventListener("DOMContentLoaded", () => {
-    const b = document.createElement("div");
-    b.textContent = "Verified replay of a successful API run";
-    b.title = "Deterministic replay of artifacts from a previous successful YouCam run — no API call is made.";
-    // pointer-events:none so this label can never intercept clicks (e.g. the drawer's
-    // Apply button in the bottom-right). z-index below the drawer overlay (1000).
-    b.style.cssText = "position:fixed;bottom:12px;right:12px;background:rgba(26,26,26,.82);" +
-      "color:#F5F3EE;font:500 11px Inter;padding:5px 11px;border-radius:9999px;z-index:900;" +
-      "letter-spacing:.01em;box-shadow:0 2px 8px rgba(0,0,0,.18);backdrop-filter:blur(4px);pointer-events:none";
-    document.body.appendChild(b);
-  });
+  // Replay disclosure label is temporarily removed — we'll decide where to place it later.
+  // (Keep this here so it's a one-line re-enable when the spot is chosen.)
+  // window.addEventListener("DOMContentLoaded", () => {
+  //   const b = document.createElement("div");
+  //   b.textContent = "Verified replay of a successful API run";
+  //   b.title = "Deterministic replay of artifacts from a previous successful YouCam run — no API call is made.";
+  //   b.style.cssText = "position:fixed;bottom:12px;right:12px;background:rgba(26,26,26,.82);" +
+  //     "color:#F5F3EE;font:500 11px Inter;padding:5px 11px;border-radius:9999px;z-index:900;" +
+  //     "letter-spacing:.01em;box-shadow:0 2px 8px rgba(0,0,0,.18);backdrop-filter:blur(4px);pointer-events:none";
+  //   document.body.appendChild(b);
+  // });
 })();

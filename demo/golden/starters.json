@@ -26,16 +26,29 @@
     "buy_url": "https://depop.com"
   },
   {
-    "garment_id": "linen_blouse",
-    "title": "Linen Life Collared Peplum Blouse Beige",
-    "brand": "Linen Life",
-    "price": 19,
+    "garment_id": "blue_dress",
+    "title": "Blue Feather Print Cold-Shoulder Mini Dress",
+    "brand": null,
+    "price": 32,
+    "platform": "poshmark",
+    "tryon_count": 3,
+    "created_at": "2026-08-06",
+    "type": "dress",
+    "size": "M",
+    "hero": "starters/blue_dress.jpg",
+    "buy_url": "https://poshmark.com"
+  },
+  {
+    "garment_id": "beige_blouse",
+    "title": "Beige Textured Collared Button-Up Blouse",
+    "brand": null,
+    "price": 21,
     "platform": "poshmark",
     "tryon_count": 1,
-    "created_at": "2026-08-06",
+    "created_at": "2026-08-04",
     "type": "blouse",
-    "size": "L",
-    "hero": "starters/linen_blouse.jpg",
+    "size": "M",
+    "hero": "starters/beige_blouse.jpg",
     "buy_url": "https://poshmark.com"
   }
 ]

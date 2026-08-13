@@ -42,6 +42,9 @@
   .stepdot{width:14px;height:14px;border-radius:9999px;display:flex;align-items:center;justify-content:center;font-size:8px;flex:none}
   /* comparable-sales drawer opens on click (not hover); full-screen sheet on mobile */
   @media (max-width:560px){ .drawer-panel{width:100vw !important} }
+  /* inventory: 3-wide on desktop, degrade gracefully on narrower screens */
+  @media (max-width:900px){ .inv-grid{grid-template-columns:repeat(2,minmax(0,1fr)) !important} }
+  @media (max-width:560px){ .inv-grid{grid-template-columns:1fr !important} }
   .specrow{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .speck{font:400 11px Inter;color:#9CA3AF;flex:none}
   .specv{flex:1;min-width:0;background:transparent;border:none;border-bottom:1px dashed transparent;font:500 11px Inter;color:#1A1A1A;text-align:right;padding:0 0 1px}
@@ -61,7 +64,7 @@
   </div>
   <div class="wrap" id="main"></div>
 </div>
-<script src="demo.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="demo.js?v=19"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>

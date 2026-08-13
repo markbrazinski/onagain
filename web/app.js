@@ -454,7 +454,7 @@ function rInventory(){
   return `<div class="fade">
     <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:20px">
       <h1>Inventory</h1><span style="font-size:13px;color:#6B7280">${items.length} listed</span></div>
-    ${items.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px">${cards}</div>` : empty}</div>`;
+    ${items.length ? `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px" class="inv-grid">${cards}</div>` : empty}</div>`;
 }
 
 function rUpload(){
