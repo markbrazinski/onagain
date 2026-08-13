@@ -19,8 +19,9 @@ _STATE: dict = {}   # canonical_id -> {platform, price, title, hero_url, size, t
 
 
 def _seed(canonical_id: str) -> Optional[dict]:
-    """Lazily build state for a listing from the golden bundle, then live inventory."""
-    from src.demo_mode import _load as golden_load
+    """Lazily build state for a listing from the golden bundle, historical starters, then
+    live inventory."""
+    from src.demo_mode import _load as golden_load, GOLDEN
     g = golden_load().get(canonical_id)
     if g:
         return {"platform": g.get("platform", "depop"), "price": g.get("price"),
@@ -28,6 +29,18 @@ def _seed(canonical_id: str) -> Optional[dict]:
                 "hero_url": f"/api/replay/render/{canonical_id}",
                 "buyer_url": f"/api/replay/buyer/{canonical_id}",
                 "origin": "replay", "tryon_count": 0, "seen_tokens": set()}
+    # historical starter listings (sundress, Disneyland sweatshirt, linen blouse)
+    import json
+    sf = GOLDEN / "starters.json"
+    if sf.exists():
+        for s in json.loads(sf.read_text()):
+            if s.get("garment_id") == canonical_id:
+                return {"platform": s.get("platform", "poshmark"), "price": s.get("price"),
+                        "title": s.get("title"), "size": s.get("size"),
+                        "hero_url": f"/api/replay/starter-hero/{canonical_id}",
+                        "buyer_url": None,   # no pre-baked buyer render for starters
+                        "origin": "starter", "tryon_count": s.get("tryon_count", 0),
+                        "seen_tokens": set()}
     from src.utils import inventory
     inv = inventory.get(canonical_id)
     if inv:

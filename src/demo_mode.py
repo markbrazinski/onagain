@@ -75,16 +75,26 @@ def saved():
     return {"listings": out}
 
 
-@router.get("/starter")
-def starter():
-    """The one pre-existing inventory listing shown on first load (img3 dress, ~4 try-ons)."""
-    f = GOLDEN / "starter.json"
-    return json.loads(f.read_text()) if f.exists() else {}
+@router.get("/starters")
+def starters():
+    """Pre-existing inventory listings shown on first load (historical garments:
+    sundress, Disneyland sweatshirt, linen blouse), each with its own try-on count."""
+    f = GOLDEN / "starters.json"
+    if f.exists():
+        return {"listings": json.loads(f.read_text())}
+    # back-compat: single starter.json
+    s = GOLDEN / "starter.json"
+    return {"listings": [json.loads(s.read_text())] if s.exists() else []}
 
 
-@router.get("/starter-hero")
-def starter_hero():
-    p = GOLDEN / "starter.jpg"
+@router.get("/starter-hero/{name}")
+def starter_hero(name: str):
+    # name is a bundle key -> starters/<name>.jpg (reject path escapes)
+    if not name.replace("_", "").isalnum():
+        raise HTTPException(400, "bad id")
+    p = GOLDEN / "starters" / f"{name}.jpg"
+    if not p.exists():
+        p = GOLDEN / "starter.jpg"   # fallback to the legacy single hero
     if not p.exists():
         raise HTTPException(404, "no starter hero")
     return FileResponse(p)

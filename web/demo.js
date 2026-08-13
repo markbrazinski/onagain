@@ -12,12 +12,12 @@
   if (params.get("replay") !== "1" && location.hash !== "#replay") return;
 
   const realFetch = window.fetch.bind(window);
-  let LISTINGS = {}, TIMINGS = {}, GIDS = [], STARTER = null;
+  let LISTINGS = {}, TIMINGS = {}, GIDS = [], STARTERS = [];
   const APPROVED = new Set();        // gids that have hit the save/approve action this session
   const ready = (async () => {
     LISTINGS = await (await realFetch("/api/replay/listings")).json().then(d => keyById(d.listings));
     TIMINGS = await (await realFetch("/api/replay/timings")).json();
-    STARTER = await (await realFetch("/api/replay/starter")).json();
+    STARTERS = await (await realFetch("/api/replay/starters")).json().then(d => d.listings || []);
     GIDS = Object.keys(LISTINGS);
   })();
 
@@ -85,15 +85,17 @@
     // seller-to-buyer-to-seller loop coherent.
     if (path === "/api/inventory") {
       const out = [];
-      if (STARTER && STARTER.garment_id) {
-        out.push({ ...STARTER, hero_photo: "/api/replay/starter-hero", status: "listed" });
-      }
-      // saved golden listings come from server-side listing_state (survive navigation +
-      // carry the real marketplace and completed-try-on count)
+      // NEW saved golden listings go FIRST (position 0) — a just-saved garment appears at
+      // the top of the home page, ahead of the pre-existing historical listings.
       try {
         const s = await (await realFetch("/api/replay/saved")).json();
-        (s.listings || []).forEach(l => out.push({ ...l, created_at: "2026-08-10" }));
+        (s.listings || []).forEach(l => out.push({ ...l, created_at: "2026-08-11" }));
       } catch (e) {}
+      // then the historical starter listings (sundress, Disneyland sweatshirt, linen blouse)
+      STARTERS.forEach(st => {
+        if (!st || !st.garment_id) return;
+        out.push({ ...st, hero_photo: `/api/replay/starter-hero/${st.garment_id}`, status: "listed" });
+      });
       return json({ listings: out });
     }
 
