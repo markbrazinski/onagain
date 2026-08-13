@@ -25,42 +25,52 @@ with sync_playwright() as pw:
     page.wait_for_timeout(400)
     ok("click opens drawer (no hover)", page.query_selector("[role=dialog]") is not None)
 
-    # 2. drawer shows the CARDIGAN's evidence: count 6, median 19.49, range 11–42
-    body = page.inner_text("[role=dialog]").lower()
-    ok("summary shows 6 sold listings", "6" in body and "sold listings" in body)
-    ok("median 19.49 shown", "$19.49" in body)
-    ok("range $11–$42 shown", "$11–$42" in body or ("$11" in body and "$42" in body))
+    # 2. decision block: suggested $22, count, NO conventional median in primary hierarchy
+    body = page.inner_text("[role=dialog]")
+    low = body.lower()
+    ok("suggested price $22 shown", "$22" in body)
+    ok("'Based on 6 comparable sold listings'", "6 comparable sold listings" in low)
+    ok("conventional median $19.49 NOT in drawer", "19.49" not in body)
+    ok("'Use $22' primary action present", page.query_selector("#use-suggested") is not None)
     aria = page.get_attribute("[role=dialog]", "aria-label") or ""
-    ok("drawer names the cardigan", "cardigan" in body or "cardigan" in aria.lower())
+    ok("drawer names the cardigan", "cardigan" in low or "cardigan" in aria.lower())
 
-    # 3. six rows present
-    rows = page.query_selector_all("[role=dialog] >> text=/eBay|Mercari|Poshmark/")
-    ok("marketplace badges present (>=6)", len(rows) >= 6)
+    # 3. calculation block: ascending strip w/ $22.99 selected + honest explanation
+    ok("selected candidate $22.99 highlighted", page.query_selector("[role=dialog] [aria-current='true']") is not None)
+    sel_txt = page.inner_text("[role=dialog] [aria-current='true']")
+    ok("highlighted value is $22.99", "22.99" in sel_txt)
+    ok("explanation connects 22.99 -> $22", "22.99" in body and "$22 listing price" in body)
 
-    # 4. apply a new price -> updates ONLY the cardigan
-    page.fill("#drawer-price", "33")
-    dress_before = page.inner_text("#rcard-3")     # olive dress card (unchanged expected)
-    page.click("[role=dialog] button:has-text('Apply price')")
-    page.wait_for_timeout(500)
-    ok("drawer closes after apply", page.query_selector("[role=dialog]") is None)
-    # price lives in the card's <input> value (not text content)
-    card2_price = page.eval_on_selector("#rcard-2 input[aria-label='Suggested price']", "el => el.value")
-    ok("cardigan price applied ($33)", "33" in card2_price)
-    dress_after = page.inner_text("#rcard-3")
-    ok("adjacent dress card unchanged", dress_before.strip() == dress_after.strip())
+    # 4. six source rows w/ honest 'View search' links
+    ok("6 source listings label", "6 source listings" in low)
+    links = page.query_selector_all("[role=dialog] a")
+    ok("source links say 'View search' (not sold-link)", any("view search" in (a.inner_text() or '').lower() for a in links))
 
-    # 5. Escape closes; focus returns to the trigger
+    # 5. 'Use $22' applies to ONLY the cardigan, via canonical state path, flips to Applied
+    dress_before = page.inner_text("#rcard-3")
+    page.click("#use-suggested"); page.wait_for_timeout(300)
+    ok("button flips to Applied ✓", "Applied" in page.inner_text("#use-suggested"))
+    card2 = page.eval_on_selector("#rcard-2 input[aria-label='Suggested price']", "el => el.value")
+    ok("cardigan price applied ($22)", "22" in card2)
+    ok("adjacent dress card unchanged", dress_before.strip() == page.inner_text("#rcard-3").strip())
+    page.click("[role=dialog] button[aria-label^='Close']"); page.wait_for_timeout(300)
+
+    # 6. custom price path still works (secondary 'Apply')
     page.click("#rcard-2 button:has-text('Review')"); page.wait_for_timeout(300)
-    ok("reopened drawer reflects saved price ($33)", "33" in page.inner_text("[role=dialog]"))
+    page.fill("#drawer-price", "33"); page.click("[role=dialog] button:has-text('Apply')"); page.wait_for_timeout(400)
+    ok("custom price applied ($33)", "33" in page.eval_on_selector("#rcard-2 input[aria-label='Suggested price']", "el=>el.value"))
+
+    # 7. Escape closes + focus restore
+    page.click("#rcard-2 button:has-text('Review')"); page.wait_for_timeout(300)
     page.keyboard.press("Escape"); page.wait_for_timeout(300)
     ok("Escape closes drawer", page.query_selector("[role=dialog]") is None)
     focused = page.evaluate("() => document.activeElement && document.activeElement.textContent")
     ok("focus returns to Review button", focused and "Review" in focused)
 
-    # 6. cancel (close without apply) preserves price
+    # 8. cancel preserves price
     page.click("#rcard-2 button:has-text('Review')"); page.wait_for_timeout(300)
     page.fill("#drawer-price", "999")
-    page.click("[role=dialog] button[aria-label=Close]"); page.wait_for_timeout(300)
+    page.click("[role=dialog] button[aria-label^='Close']"); page.wait_for_timeout(300)
     final_price = page.eval_on_selector("#rcard-2 input[aria-label='Suggested price']", "el => el.value")
     ok("cancel does NOT change price (still 33)", "33" in final_price and "999" not in final_price)
 

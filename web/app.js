@@ -129,6 +129,18 @@ function compStats(comps){
   return { count: n, min: prices[0], max: prices[n-1], median };
 }
 
+// The real pricing rule, reproduced on the DISPLAYED comps so the UI shows exactly what
+// the backend does: sort ascending, pick index n//2, then int() -> whole-dollar price.
+// (comps.research(): suggested_mid = int(sorted_prices[n // 2]).) No hardcoding — this
+// works for any count and any prices.
+function selectedComp(comps){
+  const prices = (comps || []).map(c => +c.price).filter(p => !isNaN(p)).sort((a,b)=>a-b);
+  if(!prices.length) return null;
+  const idx = Math.floor(prices.length / 2);      // n // 2, matches the backend
+  const candidate = prices[idx];                  // e.g. $22.99
+  return { prices, idx, candidate, dollars: Math.trunc(candidate) };  // int() -> $22
+}
+
 // Compact price summary: suggested price, then row-derived count/median/range, then the
 // "Review 6 comps" button. No hover; no invented rationale for the suggested number.
 function priceSummary(g, n){
@@ -147,7 +159,7 @@ function priceSummary(g, n){
       <button onclick="openComps(${n})" style="background:none;border:none;padding:0;cursor:pointer;color:#C4654A;font:600 12px Inter;text-decoration:underline;text-underline-offset:2px">Review ${s.count} comps</button>
     </div>
     <div style="font:400 11.5px Inter;color:#6B7280">
-      ${s.count} sold listings · Median ${fmtUSD(s.median)} · Range ${fmtUSD(s.min)}–${fmtUSD(s.max)}</div>
+      ${s.count} sold listings · Range ${fmtUSD(s.min)}–${fmtUSD(s.max)}</div>
   </div>`;
 }
 /* ---------------- comparable-sales drawer (click, not hover) ---------------- */
@@ -176,14 +188,23 @@ function closeComps(){
 }
 function _compsKeydown(e){ if(e.key === "Escape") closeComps(); }
 
+// apply a validated custom price (secondary path) — updates ONLY this listing
 function applyCompsPrice(n){
   const inp = document.getElementById("drawer-price");
   const raw = (inp?.value || "").replace(/[^0-9.]/g, "");
   const val = parseFloat(raw);
   if(isNaN(val) || val <= 0){ inp?.focus(); if(inp) inp.style.borderColor = "#DC2626"; return; }
-  edits(n).price = fmtUSD(val);        // update ONLY this listing's edited price
+  edits(n).price = fmtUSD(val);
+  refreshCard(n);
   closeComps();
-  refreshCard(n);                      // reflect the new price on just this card
+}
+// apply the algorithm's suggested whole-dollar price (primary "Use $X" action). Routes
+// through the SAME state path (edits[n].price) as any manual override; flips to Applied ✓.
+function useSuggestedPrice(n, dollars){
+  edits(n).price = fmtUSD(dollars);
+  refreshCard(n);
+  const btn = document.getElementById("use-suggested");
+  if(btn){ btn.textContent = "Applied ✓"; btn.disabled = true; btn.style.background = "#16A34A"; }
 }
 
 // marketplace icon tile (P0). Real marketplace mark — no invented product photo. The
@@ -208,55 +229,92 @@ function mktIcon(src){
 
 function compsDrawer(g, n){
   const comps = g.pricing?.comps || [];
-  const s = compStats(comps);
+  const sel = selectedComp(comps);                    // sorted prices + selected candidate
   const title = displayTitle(g);
+  const size = sizeOf(g)?.size;
   const cur = String(priceOf(g)).replace(/[^0-9.]/g, "") || "";
-  const stat = (label, val) => `<div style="flex:1"><div class="microlabel" style="margin-bottom:2px">${label}</div>
-    <div style="font:600 15px Inter;color:#1A1A1A">${val}</div></div>`;
-  const rows = comps.map(c => {
+  const suggested = sel ? sel.dollars : (parseFloat(cur) || null);   // whole-dollar suggestion
+  const s = compStats(comps);
+
+  // Ascending price strip; the algorithm-selected candidate is visually highlighted.
+  const strip = sel ? sel.prices.map((p, i) => {
+    const on = i === sel.idx;
+    return `<span style="display:inline-flex;align-items:center;font:${on?600:500} 12.5px Inter;
+      color:${on?"#fff":"#4B5563"};background:${on?"#C4654A":"#F0EEE8"};border-radius:8px;padding:5px 9px"
+      ${on?`aria-current="true" title="Selected by OnAgain"`:""}>${fmtUSD(p)}</span>`;
+  }).join(`<span style="color:#C9C4BA;font-size:11px">›</span>`) : "";
+
+  // Source rows, sorted by price ascending; price-first, light marketplace label, honest link.
+  const sortedComps = comps.slice().filter(c => !isNaN(+c.price)).sort((a,b)=>(+a.price)-(+b.price));
+  const rows = sortedComps.map(c => {
     const m = mktOf(c.source);
     const url = compSearchUrl(c);
-    const badge = `<span style="display:inline-block;margin-top:6px;background:#F0EEE8;color:#6B7280;font:500 10px Inter;padding:2px 8px;border-radius:9999px">${esc(m.label)}${url?` · search ↗`:""}</span>`;
-    const titleHtml = url
-      ? `<a href="${url}" target="_blank" rel="noopener" style="color:#1A1A1A;text-decoration:none;font:400 12.5px Inter;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden" title="${esc(c.title||"")} — search ${esc(m.label)}">${esc(c.title||"Comparable listing")}</a>`
-      : `<div style="font:400 12.5px Inter;color:#1A1A1A;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden" title="${esc(c.title||"")}">${esc(c.title||"Comparable listing")}</div>`;
-    return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-top:1px solid #EDEAE3">
-      ${mktIcon(c.source)}
+    const link = url
+      ? `<a href="${url}" target="_blank" rel="noopener" style="color:#6B7280;font:500 10.5px Inter;text-decoration:none;white-space:nowrap">${esc(m.label)} · View search ↗</a>`
+      : `<span style="color:#9CA3AF;font:500 10.5px Inter">${esc(m.label)}</span>`;
+    return `<div style="display:flex;align-items:flex-start;gap:12px;padding:11px 0;border-top:1px solid #EDEAE3">
+      <div style="font:600 14px Inter;color:#1A1A1A;white-space:nowrap;width:52px;flex:none">${fmtUSD(c.price)}</div>
       <div style="flex:1;min-width:0">
-        ${titleHtml}
-        ${badge}
+        <div style="font:400 12.5px Inter;color:#1A1A1A;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden" title="${esc(c.title||"")}">${esc(c.title||"Comparable listing")}</div>
+        <div style="margin-top:3px">${link}</div>
       </div>
-      <div style="font:600 15px Inter;color:#1A1A1A;white-space:nowrap">${fmtUSD(c.price)}</div>
     </div>`;
   }).join("");
+
+  const explain = sel
+    ? `OnAgain sorts the ${sel.prices.length} sold prices and takes the middle one, ${fmtUSD(sel.candidate)}. Rounded down to a whole dollar, that's the $${sel.dollars} listing price.`
+    : "";
+
   return `
   <div onclick="if(event.target===this)closeComps()" role="presentation"
        style="position:fixed;inset:0;background:rgba(26,26,26,.34);z-index:1000;display:flex;justify-content:flex-end">
     <div role="dialog" aria-modal="true" aria-label="Comparable sales for ${esc(title)}" class="drawer-panel"
          style="width:500px;max-width:100vw;height:100%;background:#FAFAF7;box-shadow:-8px 0 30px rgba(0,0,0,.18);display:flex;flex-direction:column;animation:oafade .2s ease">
-      <div style="padding:20px 22px;border-bottom:1px solid #E5E2DB;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+
+      <!-- header -->
+      <div style="padding:18px 22px;border-bottom:1px solid #E5E2DB;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
         <div>
-          <div style="font:500 18px Inter;color:#1A1A1A">Comparable sales</div>
-          <div style="font:400 12.5px Inter;color:#6B7280;margin-top:2px">Evidence for the ${esc(fmtUSD(cur||priceOf(g)))} suggested price</div>
-          <div style="font:400 11px Inter;color:#9CA3AF;margin-top:2px">${esc(title)}</div>
+          <div style="font:500 17px Inter;color:#1A1A1A">Comparable sales</div>
+          <div style="font:400 12px Inter;color:#9CA3AF;margin-top:2px">${esc(title)}${size?` · ${esc(size)}`:""}</div>
         </div>
-        <button data-drawer-focus onclick="closeComps()" aria-label="Close" class="btn-ghost" style="padding:6px 10px;font-size:16px;line-height:1">✕</button>
+        <button data-drawer-focus onclick="closeComps()" aria-label="Close comparable sales" class="btn-ghost" style="padding:6px 10px;font-size:16px;line-height:1">✕</button>
       </div>
-      <div style="padding:18px 22px;border-bottom:1px solid #E5E2DB;display:flex;gap:14px">
-        ${s ? stat("Sold listings", s.count) + stat("Median", fmtUSD(s.median)) + stat("Range", `${fmtUSD(s.min)}–${fmtUSD(s.max)}`) : `<div style="color:#9CA3AF;font:400 13px Inter">No comparable data available.</div>`}
+
+      <div style="flex:1;overflow-y:auto">
+        <!-- decision block: suggested price is the strongest element, apply is right here -->
+        <div style="padding:20px 22px;border-bottom:1px solid #E5E2DB">
+          <div class="microlabel">Suggested price</div>
+          <div style="display:flex;align-items:center;gap:14px;margin:2px 0 4px">
+            <div style="font:600 34px Inter;color:#1A1A1A;line-height:1">${suggested!=null?"$"+suggested:"—"}</div>
+            ${suggested!=null?`<button id="use-suggested" onclick="useSuggestedPrice(${n}, ${suggested})" class="btn" style="padding:10px 18px">Use $${suggested}</button>`:""}
+          </div>
+          <div style="font:400 12px Inter;color:#6B7280">Based on ${s?s.count:0} comparable sold listings${s?` · Range ${fmtUSD(s.min)}–${fmtUSD(s.max)}`:""}</div>
+        </div>
+
+        <!-- calculation block: ordered strip + selected candidate + plain explanation -->
+        ${sel?`<div style="padding:18px 22px;border-bottom:1px solid #E5E2DB">
+          <div class="microlabel" style="margin-bottom:8px">How this price was calculated</div>
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-bottom:10px">${strip}</div>
+          <div style="font:400 12px Inter;color:#4B5563;line-height:1.5">${explain}</div>
+        </div>`:""}
+
+        <!-- evidence block: source listings, price-first, ascending -->
+        <div style="padding:8px 22px 18px">
+          <div class="microlabel" style="margin:12px 0 2px">${sortedComps.length} source listings</div>
+          ${sortedComps.length ? rows : `<div style="color:#9CA3AF;font:400 13px Inter;padding:16px 0">No comparable sold listings to show.</div>`}
+        </div>
       </div>
-      <div style="flex:1;overflow-y:auto;padding:6px 22px 18px">
-        ${comps.length ? rows : `<div style="color:#9CA3AF;font:400 13px Inter;padding:16px 0">No comparable sold listings to show.</div>`}
-      </div>
-      <div style="padding:16px 22px;border-top:1px solid #E5E2DB;background:#F5F3EE">
-        <div class="microlabel" style="margin-bottom:6px">Set listing price</div>
+
+      <!-- secondary: enter a different price -->
+      <div style="padding:14px 22px;border-top:1px solid #E5E2DB;background:#F5F3EE">
+        <div class="microlabel" style="margin-bottom:6px">Or set your own price</div>
         <div style="display:flex;gap:10px;align-items:center">
           <div style="position:relative;flex:1">
             <span style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#6B7280;font:500 14px Inter">$</span>
-            <input id="drawer-price" type="text" inputmode="decimal" value="${esc(cur)}" aria-label="Listing price"
-                   style="width:100%;background:#fff;border:1px solid #E5E2DB;border-radius:8px;font:500 15px Inter;color:#1A1A1A;padding:10px 12px 10px 22px">
+            <input id="drawer-price" type="text" inputmode="decimal" value="${esc(cur)}" aria-label="Custom listing price"
+                   style="width:100%;background:#fff;border:1px solid #E5E2DB;border-radius:8px;font:500 15px Inter;color:#1A1A1A;padding:9px 12px 9px 22px">
           </div>
-          <button onclick="applyCompsPrice(${n})" class="btn" style="padding:10px 18px">Apply price</button>
+          <button onclick="applyCompsPrice(${n})" class="btn-ghost" style="padding:9px 16px">Apply</button>
         </div>
       </div>
     </div>
