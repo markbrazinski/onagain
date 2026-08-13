@@ -138,12 +138,16 @@ function priceSummary(g, n){
       style="width:70px;background:transparent;border:none;border-bottom:1px dashed #C4654A;font:600 20px Inter;padding:0 0 1px">`;
   if(!s) return `<div style="margin-bottom:12px"><div class="microlabel">Suggested price</div>
     <div style="display:flex;align-items:baseline;gap:8px">${priceInput}<span style="font-size:11px;color:#9CA3AF">no comp data</span></div></div>`;
+  // "Review N comps" sits right next to the price (orange link) so the evidence is easy
+  // to find, with the summary line underneath.
   return `<div style="margin-bottom:12px">
     <div class="microlabel">Suggested price</div>
-    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">${priceInput}</div>
-    <div style="font:400 11.5px Inter;color:#6B7280;margin-bottom:8px">
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px">
+      ${priceInput}
+      <button onclick="openComps(${n})" style="background:none;border:none;padding:0;cursor:pointer;color:#C4654A;font:600 12px Inter;text-decoration:underline;text-underline-offset:2px">Review ${s.count} comps</button>
+    </div>
+    <div style="font:400 11.5px Inter;color:#6B7280">
       ${s.count} sold listings · Median ${fmtUSD(s.median)} · Range ${fmtUSD(s.min)}–${fmtUSD(s.max)}</div>
-    <button onclick="openComps(${n})" class="btn-ghost" style="font:500 12px Inter;padding:6px 12px">Review ${s.count} comps</button>
   </div>`;
 }
 /* ---------------- comparable-sales drawer (click, not hover) ---------------- */
@@ -182,6 +186,26 @@ function applyCompsPrice(n){
   refreshCard(n);                      // reflect the new price on just this card
 }
 
+// marketplace icon tile (P0). Real marketplace mark — no invented product photo. The
+// letter + brand color stands in for a thumbnail we don't have.
+const MKT = {
+  ebay:     { label: "eBay",     bg: "#e5f0fb", fg: "#0064D2", host: "ebay.com",     path: q => `https://www.ebay.com/sch/i.html?_nkw=${q}&LH_Sold=1&LH_Complete=1` },
+  mercari:  { label: "Mercari",  bg: "#eafaf3", fg: "#1a9c6a", host: "mercari.com",  path: q => `https://www.mercari.com/search/?keyword=${q}` },
+  poshmark: { label: "Poshmark", bg: "#fdeef0", fg: "#C4194A", host: "poshmark.com", path: q => `https://poshmark.com/search?query=${q}` },
+  depop:    { label: "Depop",    bg: "#fdeeea", fg: "#C4654A", host: "depop.com",    path: q => `https://www.depop.com/search/?q=${q}` },
+};
+function mktOf(src){ return MKT[String(src||"").toLowerCase()] || { label: src||"", bg:"#F0EEE8", fg:"#6B7280", host:"", path:q=>"" }; }
+// P1: an honest SEARCH link for the item (comparable results on that marketplace) — not a
+// fabricated exact-listing URL.
+function compSearchUrl(c){
+  const m = mktOf(c.source);
+  return m.path ? m.path(encodeURIComponent(c.title || "")) : "";
+}
+function mktIcon(src){
+  const m = mktOf(src);
+  return `<div title="${esc(m.label)}" style="flex:none;width:40px;height:40px;border-radius:8px;background:${m.bg};color:${m.fg};display:flex;align-items:center;justify-content:center;font:600 15px Inter">${esc((m.label||"?")[0])}</div>`;
+}
+
 function compsDrawer(g, n){
   const comps = g.pricing?.comps || [];
   const s = compStats(comps);
@@ -190,11 +214,17 @@ function compsDrawer(g, n){
   const stat = (label, val) => `<div style="flex:1"><div class="microlabel" style="margin-bottom:2px">${label}</div>
     <div style="font:600 15px Inter;color:#1A1A1A">${val}</div></div>`;
   const rows = comps.map(c => {
-    const src = esc(c.source || "");
+    const m = mktOf(c.source);
+    const url = compSearchUrl(c);
+    const badge = `<span style="display:inline-block;margin-top:6px;background:#F0EEE8;color:#6B7280;font:500 10px Inter;padding:2px 8px;border-radius:9999px">${esc(m.label)}${url?` · search ↗`:""}</span>`;
+    const titleHtml = url
+      ? `<a href="${url}" target="_blank" rel="noopener" style="color:#1A1A1A;text-decoration:none;font:400 12.5px Inter;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden" title="${esc(c.title||"")} — search ${esc(m.label)}">${esc(c.title||"Comparable listing")}</a>`
+      : `<div style="font:400 12.5px Inter;color:#1A1A1A;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden" title="${esc(c.title||"")}">${esc(c.title||"Comparable listing")}</div>`;
     return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-top:1px solid #EDEAE3">
+      ${mktIcon(c.source)}
       <div style="flex:1;min-width:0">
-        <div style="font:400 12.5px Inter;color:#1A1A1A;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden" title="${esc(c.title||"")}">${esc(c.title||"Comparable listing")}</div>
-        ${src ? `<span style="display:inline-block;margin-top:6px;background:#F0EEE8;color:#6B7280;font:500 10px Inter;padding:2px 8px;border-radius:9999px">${src}</span>` : ""}
+        ${titleHtml}
+        ${badge}
       </div>
       <div style="font:600 15px Inter;color:#1A1A1A;white-space:nowrap">${fmtUSD(c.price)}</div>
     </div>`;
